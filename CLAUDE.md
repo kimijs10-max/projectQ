@@ -77,7 +77,13 @@ portfolio-risk/
   to FX snapshot timing, not valuation error; remaining noise is IBKR mark vs. Yahoo
   close. Not exact like Phase 1, since this rebuilds history from a third-party price
   source rather than re-summing Flex's own numbers. See NOTES.md.
-- [ ] **4a — Factor exposure (done early):** regress portfolio excess returns on French factors (MKT, SMB, HML, RMW, CMA, MOM), US and Japan sleeves separately, plus rolling.
+- [x] **4a — Factor exposure (done early):** regress portfolio excess returns on French factors (MKT, SMB, HML, RMW, CMA, MOM), US and Japan sleeves separately, plus rolling.
+  Each sleeve regressed in its own local currency against its own region's factors
+  (mixing SGD returns with USD factors would push FX into the residual). Newey-West
+  HAC standard errors alongside OLS. **Headline result: neither sleeve shows a positive
+  HML loading** — USD −0.41 (t = −1.8), JPY −0.07 (t = −0.2). Alpha ~+10%/yr in both
+  sleeves but t ≈ 0.3–0.5, indistinguishable from zero on one year of data. See NOTES.md
+  for the interpretation, which is more nuanced than "the value thesis failed".
 - [ ] **3 — Risk:** historical + parametric VaR (95/99%), beta to S&P 500 and TOPIX, correlation matrix, concentration (max weight, HHI). Compare to IBKR's own VaR report as a sanity check.
 - [ ] **4b–d — Screener upgrade, backtest, sizing:** add gross profitability, Piotroski F-Score, 12-1 momentum, P/B < 1 flag (TSE reform); sector-neutral composite; backtest value-only vs. value+quality vs. value+quality+momentum; margin-of-safety sizing from DCF / residual income (banks).
 - [ ] **5 — Stress tests:** spring 2025 selloff, Aug 2024 yen carry unwind, March 2020, hypothetical (yen +10%, Nasdaq −15%). Compare to IBKR's stress test report.

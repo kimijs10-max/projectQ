@@ -156,6 +156,18 @@ SCHEMA = {
             PRIMARY KEY (date, symbol)
         )
     """,
+    # Fama-French factor returns, stored long rather than wide so a new
+    # factor or region needs no schema change. Values are decimal
+    # returns (the source publishes percent; factor_data.py converts).
+    "factor_returns": """
+        CREATE TABLE IF NOT EXISTS factor_returns (
+            date TEXT NOT NULL,
+            region TEXT NOT NULL,
+            factor TEXT NOT NULL,
+            value REAL,
+            PRIMARY KEY (date, region, factor)
+        )
+    """,
 }
 
 

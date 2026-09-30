@@ -235,6 +235,81 @@ Account identifiers are redacted: `ACCOUNT_A` is the trading account,
   check that documented files actually exist before pointing readers at
   them.
 
+## Phase 4a — Factor exposure (2026-09-30)
+
+- **Kenneth French daily data exists for Japan, which was not assumed.**
+  The worry going in was that international factor sets are published
+  monthly, which would have left ~12 observations against 6 predictors
+  — statistically meaningless. Probed the library first:
+  `Japan_5_Factors_Daily_CSV.zip` and `Japan_MOM_Factor_Daily_CSV.zip`
+  both exist, so both sleeves get ~230 daily observations.
+
+- **French CSV format quirks, all verified against the live files
+  rather than assumed** (they differ between the US and Japan sets):
+  preamble length differs, so the header is located as the first line
+  beginning with a comma; values are published in percent; missing
+  values are `-99.99` or `-999`; Japan pads its date column with
+  trailing spaces; the momentum factor is `Mom` for the US but `WML`
+  for Japan; a copyright line trails the data. Parser takes only rows
+  whose first field is an 8-digit date, which also skips any
+  annual-frequency table appended below the daily one.
+
+- **The library lags about a month.** Factor data ends 2026-08-31
+  while the portfolio series runs to 2026-09-28, so the regression
+  sample stops a month short of the present. Not a bug, but it means
+  the newest month is never in the regression.
+
+- **Local currency against local factors.** Each sleeve is regressed in
+  its trading currency against its own region's factors. Regressing
+  SGD-denominated returns on USD-denominated factors would push the FX
+  move into the residual and corrupt alpha, since the factors cannot
+  explain currency. Phase 2's separation of `r_local` from `r_fx` is
+  what makes this free. Within a sleeve, weighting by base-currency
+  value is still valid for local returns because all holdings share
+  one currency and the FX rate cancels out of the weighted average.
+
+- **Newey-West HAC standard errors reported alongside OLS.** Daily
+  residuals are serially correlated, which inflates OLS t-statistics.
+  Phase 2 already found serial structure in this same data, so
+  assuming it away here would have been inconsistent. Truncation lag
+  from the usual rule of thumb, `4*(n/100)^(2/9)`, giving 4. Hand-rolled
+  OLS with numpy rather than adding statsmodels/scipy; p-values use the
+  normal approximation, immaterial at n≈230.
+
+- **Sleeve return code validated by hand** before trusting any
+  regression output: recomputed one day's USD sleeve return directly
+  from `holding_prices` with weights taken from the prior day's values,
+  and it matched the engine to 10 decimal places.
+
+- **Result: neither sleeve shows a positive HML (value) loading.**
+  USD −0.41 (t = −1.78 HAC, p = 0.075), JPY −0.07 (t = −0.24). The
+  stated strategy is firm-foundation / intrinsic value, which predicted
+  positive HML, so this is a falsification of the prediction as stated.
+  **The nuance that matters:** HML is constructed on book-to-market,
+  whereas firm-foundation theory values discounted future cash flows.
+  Those are different constructs — a DCF-based investor can rationally
+  own a high book-multiple name if future cash flows justify the price.
+  So the defensible conclusion is not "the value thesis failed" but
+  "the strategy as implemented is not academic-HML value", which is a
+  sharper and more honest statement. Worth resolving properly in Phase
+  4b–d, where the screener builds explicit value/quality metrics that
+  can be compared against these loadings.
+
+- **Other loadings.** USD sleeve is dominated by market beta 1.53
+  (t = 12.2) with R² 0.59 — a large part of that sleeve is simply
+  leveraged market exposure. It also shows CMA −0.93 (t = −2.30,
+  p = 0.02), i.e. a tilt toward aggressive-investment firms, consistent
+  with high-capex growth names. JPY sleeve is market beta 0.78
+  (t = 4.80) with R² only 0.23, so it is far more idiosyncratic — as
+  expected for three concentrated names.
+
+- **Alpha is not significant and should not be claimed.** Both sleeves
+  show roughly +10%/yr compounded intercepts, but t = 0.33 (JPY) and
+  0.50 (USD). One year of daily data cannot distinguish that from zero;
+  the standard error on an annualised alpha at this sample size is far
+  too wide. Stating the point estimate without the t-statistic would be
+  the single easiest way to get caught out on this project.
+
 ## Open items to revisit
 
 - Second linked account (`ACCOUNT_B`) throwing permission errors — harmless
