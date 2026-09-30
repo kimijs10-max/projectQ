@@ -25,12 +25,47 @@ BENCHMARK_TICKERS = ["SPY", "1306.T"]
 _USD_LEG_TICKERS = {"SGD": "SGD=X", "JPY": "JPY=X"}
 
 
+def _drop_price_spikes(s: pd.Series, tolerance: float = 2.0) -> tuple[pd.Series, int]:
+    """
+    Remove isolated price points that sit more than `tolerance` times
+    away from their local median in either direction.
+
+    Yahoo occasionally publishes a day or two of mis-scaled prices around
+    a corporate action. 1306.T, the TOPIX ETF used as a benchmark, has
+    two days in March 2026 priced at roughly a tenth of the surrounding
+    level, with no split reported and the level fully restored
+    afterwards. Those two points produce a -90% return followed by a
+    +948% return, which on its own inflates the benchmark's volatility
+    enough to drag a beta estimate to nearly zero -- it made TOPIX beta
+    read 0.004 alongside a correlation of 0.20, which is not even
+    internally consistent.
+
+    A five-day centred median is robust to a one- or two-day break, and a
+    2x band is far outside any legitimate single-day move for an index
+    fund or a large-cap equity, so this removes the artefact without
+    touching real volatility. Returns are then computed across the gap,
+    which is the correct treatment: the price genuinely did move from the
+    last good day to the next good day.
+    """
+    if len(s) < 5:
+        return s, 0
+    median = s.rolling(5, center=True, min_periods=3).median()
+    ratio = s / median
+    bad = (ratio > tolerance) | (ratio < 1.0 / tolerance)
+    if not bad.any():
+        return s, 0
+    return s[~bad], int(bad.sum())
+
+
 def _download_close(ticker: str, period: str) -> pd.Series:
     """Daily close prices for one yfinance ticker, indexed by timestamp."""
     df = yf.Ticker(ticker).history(period=period)
     if df.empty:
         return pd.Series(dtype=float)
-    return df["Close"]
+    cleaned, dropped = _drop_price_spikes(df["Close"])
+    if dropped:
+        print(f"  warning: dropped {dropped} mis-scaled price point(s) for {ticker}")
+    return cleaned
 
 
 def get_fx_history(period: str = "2y") -> pd.DataFrame:

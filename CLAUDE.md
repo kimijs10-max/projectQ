@@ -84,7 +84,12 @@ portfolio-risk/
   HML loading** — USD −0.41 (t = −1.8), JPY −0.07 (t = −0.2). Alpha ~+10%/yr in both
   sleeves but t ≈ 0.3–0.5, indistinguishable from zero on one year of data. See NOTES.md
   for the interpretation, which is more nuanced than "the value thesis failed".
-- [ ] **3 — Risk:** historical + parametric VaR (95/99%), beta to S&P 500 and TOPIX, correlation matrix, concentration (max weight, HHI). Compare to IBKR's own VaR report as a sanity check.
+- [x] **3 — Risk:** historical + parametric VaR (95/99%), beta to S&P 500 and TOPIX, correlation matrix, concentration (max weight, HHI). Compare to IBKR's own VaR report as a sanity check.
+  Annualised vol ~17.9%; 95% VaR 1.90% historical vs 1.78% parametric (normal assumption
+  understates the tail). 99% VaR is printed with its tail count — 3 observations, so not a
+  usable estimate at this sample size. Base-currency beta 0.65 to SPY, 0.38 to TOPIX;
+  equity HHI 0.243, effective N 4.1. **Still outstanding:** the cross-check against IBKR's
+  own VaR report — it is not part of the Flex Query, so it remains a manual comparison.
 - [ ] **4b–d — Screener upgrade, backtest, sizing:** add gross profitability, Piotroski F-Score, 12-1 momentum, P/B < 1 flag (TSE reform); sector-neutral composite; backtest value-only vs. value+quality vs. value+quality+momentum; margin-of-safety sizing from DCF / residual income (banks).
 - [ ] **5 — Stress tests:** spring 2025 selloff, Aug 2024 yen carry unwind, March 2020, hypothetical (yen +10%, Nasdaq −15%). Compare to IBKR's stress test report.
 - [ ] **6 — Execution analysis:** fills vs. arrival price and VWAP, slippage in bps; state small-sample caveat.

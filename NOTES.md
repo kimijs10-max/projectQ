@@ -310,6 +310,65 @@ Account identifiers are redacted: `ACCOUNT_A` is the trading account,
   too wide. Stating the point estimate without the t-statistic would be
   the single easiest way to get caught out on this project.
 
+## Phase 3 — Risk (2026-09-30)
+
+- **1306.T (TOPIX benchmark) had two days of corrupt prices from Yahoo,
+  and it showed up as an impossible beta.** The first run reported TOPIX
+  beta 0.004 alongside correlation 0.204 — not internally consistent,
+  since beta = corr x (sigma_p / sigma_b), so those two together imply
+  the benchmark is ~50x more volatile than the portfolio. Chasing it
+  down: on 2026-03-30 and 03-31 the price sits at roughly a tenth of the
+  surrounding level (375 -> 37 -> 36 -> 382), producing a -90% return
+  followed by a +948% one. Yahoo reports **no split**, and the raw
+  unadjusted `Close` carries the same break, so it is not an adjustment
+  artefact that a different fetch setting fixes — it is bad source data
+  for exactly two days. Those two points alone inflated the benchmark's
+  daily vol from 1.28% to 43.3%.
+  **Fix:** a spike filter at ingestion in `market_data.py` — any point
+  more than 2x away from its own five-day centred median is dropped, and
+  the return is then computed across the gap, which is the correct
+  treatment. A five-day centred median is robust to a one- or two-day
+  break and a 2x band is far outside any real single-day move for an
+  index fund. Verified it removes exactly the two bad points and touches
+  **none** of the seven holdings, so Phase 2 and 4a results were never
+  affected. The two rows already in the database had to be deleted
+  explicitly, since an upsert overwrites but never removes.
+  **Lesson:** a figure that is internally inconsistent is worth more
+  attention than one that merely looks surprising. The beta being small
+  was not the tell; the beta being small *while the correlation was not*
+  was.
+
+- **`resample("W").prod()` fabricates returns for weeks with no data.**
+  Found only because the pairwise observation counts were printed
+  alongside the weekly correlation matrix: it claimed 53 weekly
+  observations for **every** pair, including 5105.T vs 9101.T, which have
+  no overlapping holding period at all (one was bought after the other
+  was sold, and the daily matrix correctly showed NaN). Cause: `prod()`
+  skips NaN by default, so a week with no observations returns 1.0,
+  i.e. a fabricated 0% return. The weekly correlations were therefore
+  computed partly on invented data, and it mattered — 9101.T/SHOP moved
+  from 0.28 to 0.47 once fixed. **Fix:** `prod(min_count=1)`.
+  **Lesson:** printing the observation count behind a statistic is
+  cheap and catches things the statistic itself hides. Same principle as
+  the VaR tail counts, and it paid off immediately.
+
+- **The asynchronous-close test is inconclusive, and the observation
+  counts say why.** The daily-vs-weekly correlation comparison was meant
+  to expose the Tokyo/New York close gap. Cross-market pairs move both
+  directions weekly, averaging about +0.03 — no clear effect. But the
+  counts point at the reason: NVDA/SHOP is the only pair with the full
+  53 weeks, and it is also the only one that barely moves (0.28 -> 0.29).
+  Every pair that swings hard has 23-27 weeks behind it, where the
+  standard error is around 0.19. So the instability is a sample-size
+  artefact, not a real weekly-vs-daily difference. Revisit once there is
+  more history; the daily matrix is better supported for now.
+
+- **99% VaR is reported with its tail count and flagged unusable.** At
+  261 observations the 99% quantile rests on 3 points. The figure is
+  printed because omitting it invites someone to compute it themselves
+  without the caveat, but it carries the count inline so it cannot be
+  quoted innocently.
+
 ## Open items to revisit
 
 - Second linked account (`ACCOUNT_B`) throwing permission errors — harmless
@@ -322,3 +381,10 @@ Account identifiers are redacted: `ACCOUNT_A` is the trading account,
 - Phase 2's ~7% residual gap (see above) -- revisit if it starts to matter
   for later phases (e.g. if Phase 3's VaR/risk numbers look off, or the
   gap grows as more trades/holidays accumulate).
+- **Cross-check risk figures against IBKR's own VaR report.** Phase 3's
+  roadmap entry calls for it, but IBKR's VaR is not part of the Flex
+  Query -- it lives in Portfolio Analyst / the risk report. Remains a
+  manual comparison until a data path exists.
+- Re-run the asynchronous-close correlation test once there is more than
+  a year of history, when the weekly matrix has enough observations to
+  distinguish signal from noise.
