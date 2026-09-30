@@ -303,12 +303,14 @@ def main() -> None:
             print(f"{res.currency} sleeve vs. {res.region} factors "
                   f"({res.n_obs} obs, Newey-West lags={res.nw_lags})")
             print("=" * 66)
+            # Betas are dimensionless slopes, so they are NOT scaled or
+            # shown as percentages. Only alpha is a return, and it is
+            # reported in readable units on the summary line below.
             tbl = res.table().copy()
             for col in ("coef", "se_ols", "se_nw"):
-                tbl[col] = (tbl[col] * 100).round(4)
+                tbl[col] = tbl[col].round(4)
             tbl[["t_ols", "t_nw"]] = tbl[["t_ols", "t_nw"]].round(2)
             tbl["p_nw"] = tbl["p_nw"].round(3)
-            tbl.columns = ["term", "coef %/day", "se_ols %", "t_ols", "se_nw %", "t_nw", "p_nw"]
             print(tbl.to_string(index=False))
             print(f"\n  R-squared {res.r2:.3f} | adjusted {res.adj_r2:.3f}")
             print(f"  alpha {res.beta[0] * 100:.4f}%/day "

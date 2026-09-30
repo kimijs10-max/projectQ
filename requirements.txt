@@ -1,5 +1,6 @@
 aeventkit==2.1.0
 ib_async==2.1.0
+matplotlib==3.11.2
 nest-asyncio==1.6.0
 numpy==2.5.3
 pandas==3.0.6

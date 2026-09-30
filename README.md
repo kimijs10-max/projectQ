@@ -9,9 +9,9 @@ non-trivial: a Tokyo-listed holding can rise in yen while the yen falls
 against the base currency, and the two effects have to be separated before
 either can be judged.
 
-**Status:** data pipeline and P&L attribution complete and validated against
-the broker's own NAV. Risk (VaR, beta, correlation) and factor attribution
-are next.
+**Status:** data pipeline, P&L attribution and factor exposure complete, all
+validated against the broker's own NAV. Risk (VaR, correlation, concentration)
+is next.
 
 ---
 
@@ -125,6 +125,54 @@ move.
 
 ---
 
+## Factor exposure
+
+Each sleeve's excess return is regressed on its own region's Fama-French
+factors, in its own trading currency:
+
+```
+R_sleeve − RF = α + β_MKT·MKT + β_SMB·SMB + β_HML·HML
+                  + β_RMW·RMW + β_CMA·CMA + β_MOM·MOM + ε
+```
+
+Regressing base-currency returns on USD-denominated factors would push
+the FX move into the residual and corrupt α, since the factors cannot
+explain currency. Separating local return from FX return in the
+attribution step is what makes the correct version free.
+
+![Factor exposures by sleeve](reports/factor_exposures.png)
+
+Intervals are 95% Newey-West. HAC rather than plain OLS standard errors
+because daily residuals are serially correlated — the same property that
+showed up diagnosing the reconciliation residual — so OLS t-statistics
+would be overstated here.
+
+**The result contradicts the stated strategy, which is the interesting
+part.** An intrinsic-value approach predicts a positive HML loading.
+Neither sleeve has one: USD −0.41 (t = −1.8), JPY −0.07 (t = −0.2).
+
+The careful reading is narrower than "the value thesis failed". HML is
+constructed on book-to-market, whereas firm-foundation investing values
+discounted future cash flows — different constructs, and a DCF-based
+investor can rationally hold a high book-multiple name if future cash
+flows justify the price. The defensible claim is that **the strategy as
+implemented is not academic-HML value**. Phase 4b–d builds explicit
+value and quality metrics, which will let that be settled properly
+rather than argued.
+
+Two further readings. The USD sleeve carries market beta 1.53 with
+R² 0.59, so a large part of it is simply leveraged market exposure; the
+JPY sleeve's R² of 0.23 is far more idiosyncratic, which is what stock
+selection is supposed to look like. And α is roughly +10%/yr in both
+sleeves but with t of 0.33 and 0.50 — **indistinguishable from zero.**
+One year of daily data cannot establish skill, and quoting the point
+estimate without the t-statistic would be the easiest way to overclaim
+on this project.
+
+![Rolling factor exposures](reports/rolling_betas.png)
+
+---
+
 ## Portfolio shape
 
 Weights only; absolute values are deliberately omitted.
@@ -169,10 +217,14 @@ src/
 ├── data/
 │   ├── flex.py          # Flex download, XML parsing, raw-statement caching
 │   ├── market_data.py   # FX, benchmark and per-holding price history
+│   ├── factor_data.py   # Fama-French factors (Kenneth French library)
 │   ├── test_flex.py     # connectivity test: positions via Flex
 │   └── test_live.py     # connectivity test: positions via IB Gateway
 ├── storage/db.py        # schema and idempotent upserts
-├── analytics/pnl.py     # attribution, daily returns, roll-ups
+├── analytics/
+│   ├── pnl.py           # attribution, daily returns, roll-ups
+│   └── factors.py       # factor regressions, OLS + Newey-West
+├── report/plots.py      # charts
 └── checks/reconcile.py  # NAV reconciliation
 ```
 
@@ -195,6 +247,9 @@ python src/data/flex.py          # download, parse and store the statement
 python src/data/market_data.py   # FX, benchmark and holding price history
 python src/checks/reconcile.py   # verify against the broker's NAV
 python src/analytics/pnl.py      # attribution and daily-return validation
+python src/data/factor_data.py   # Fama-French factor returns
+python src/analytics/factors.py  # factor regressions
+python src/report/plots.py       # regenerate the charts above
 ```
 
 The live-position test additionally needs IB Gateway running on port 4001
@@ -246,8 +301,8 @@ control.
 | 0 | Broker connectivity, credentials, repo setup | Complete |
 | 1 | Flex parsing, SQLite snapshots, market data, NAV reconciliation | Complete |
 | 2 | P&L attribution: stock vs. FX vs. dividends vs. fees | Complete |
-| 4a | Factor exposure against Fama-French factors, US and Japan separately | Next |
-| 3 | VaR, beta, correlation, concentration | Planned |
+| 4a | Factor exposure against Fama-French factors, US and Japan separately | Complete |
+| 3 | VaR, beta, correlation, concentration | Next |
 | 4b–d | Quality/momentum screener, backtest, margin-of-safety sizing | Planned |
 | 5 | Stress tests, including the 2024 yen carry unwind | Planned |
 | 6 | Execution analysis vs. arrival price and VWAP | Planned |
