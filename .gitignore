@@ -1,0 +1,31 @@
+# Environment variables
+.env
+
+# Data (top-level only -- NOT src/data/, which holds source code)
+/data/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+
+# Virtual environments
+# .venv is a symlink (moved out of this iCloud-synced folder to avoid
+# import hangs, see NOTES.md) -- no trailing slash, since git's foo/
+# pattern only matches real directories, not symlinks.
+.venv
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+
+# IDE / tooling
+.vscode/
+.idea/
+.claude/
