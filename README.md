@@ -9,9 +9,8 @@ non-trivial: a Tokyo-listed holding can rise in yen while the yen falls
 against the base currency, and the two effects have to be separated before
 either can be judged.
 
-**Status:** data pipeline, P&L attribution and factor exposure complete, all
-validated against the broker's own NAV. Risk (VaR, correlation, concentration)
-is next.
+**Status:** data pipeline, P&L attribution, factor exposure and risk complete,
+all validated against the broker's own NAV. Stress tests are next.
 
 ---
 
@@ -20,7 +19,8 @@ is next.
 1. **What did the portfolio make or lose?** — daily P&L in base currency.
 2. **Why?** — split into local price move, FX move, their interaction,
    dividends, and trading costs.
-3. **How much could it lose tomorrow?** — VaR and stress tests *(in progress)*.
+3. **How much could it lose tomorrow?** — historical and parametric VaR,
+   beta, correlation and concentration; stress tests *(planned)*.
 4. **How well were trades executed?** — fills vs. arrival price and VWAP
    *(planned)*.
 
@@ -198,6 +198,89 @@ are computed against total NAV.
 
 ---
 
+## Risk
+
+All figures in percent of NAV, over 261 trading days.
+
+Annualised volatility is **17.9%**. One-day value at risk:
+
+| Confidence | Historical | Parametric (normal) | Observations in tail |
+|---|---|---|---|
+| 95% | **1.90%** | 1.78% | 14 |
+| 99% | 2.80% | 2.55% | **3 — not a usable estimate** |
+
+![Daily return distribution and value at risk](reports/return_distribution.png)
+
+Both estimates are reported because the gap between them is the finding.
+Parametric VaR assumes returns are normal; historical VaR reads the
+empirical quantile. Historical is worse at both levels, so the normal
+assumption understates this tail — mildly, at 0.12pp on the 95% figure,
+but in the direction the shape of the left tail predicts.
+
+Every VaR figure carries the number of observations behind its tail, and
+the 99% row is the reason that matters: at one year of daily data it rests
+on three points. Quoting it as an estimate would be the easiest dishonest
+number on this project, so the engine prints the count next to it rather
+than leaving the reader to work out the sample size.
+
+Re-running the same calculation on the broker's own NAV series instead of
+the engine's attributed returns gives 1.85% historical and 1.75%
+parametric — close enough that the risk figures do not depend on which
+return series is used, which is a cross-check the two-source design makes
+free.
+
+### Beta
+
+Portfolio and benchmark are both converted to base currency before
+differencing. Beta should describe what happens to the investor's wealth,
+which includes the currency move; the local-currency equity beta is a
+different question and is answered by the factor regressions above.
+
+| Benchmark | Beta | Correlation | R² |
+|---|---|---|---|
+| S&P 500 (SPY) | 0.65 | 0.48 | 0.23 |
+| TOPIX (1306.T) | 0.38 | 0.43 | 0.18 |
+
+Neither R² is large, which is the expected result for a five-name book and
+consistent with the factor regressions: most of the variance here is
+idiosyncratic rather than market.
+
+### Correlation, and an honest non-result
+
+![Correlation of holdings](reports/correlation_matrix.png)
+
+Tokyo closes about thirteen hours before New York, so same-date daily
+correlations should understate US/Japan co-movement while weekly sampling
+spans the gap. This was written into the project's list of known traps
+before the data was looked at, and the two panels were built to
+demonstrate it.
+
+**They do not.** Cross-market pairs move in both directions between the
+panels, averaging about +0.03.
+
+The observation counts printed in each cell explain why, and they are the
+reason the chart is worth keeping. NVDA/SHOP is the only pair with the
+full 53 weeks behind it, and it is also the only one that barely moves
+(0.28 daily, 0.29 weekly). Every pair that swings hard has 23–27 weeks,
+where the standard error on a correlation is roughly 0.19 — wide enough to
+produce those swings on its own. So the instability is a sample-size
+artefact, not a weekly-versus-daily effect, and the daily matrix is the
+better-supported of the two until there is more history.
+
+### Concentration
+
+| Measure | Equity sleeve | Including cash |
+|---|---|---|
+| Largest weight | 31.5% | 27.7% |
+| Herfindahl-Hirschman index | 0.243 | 0.202 |
+| Effective number of positions (1/HHI) | **4.1** | 4.9 |
+
+Five holdings that behave like roughly four equally weighted ones. Cash is
+shown separately because it genuinely dilutes concentration, and reporting
+only the equity sleeve would overstate how concentrated the account is.
+
+---
+
 ## Architecture
 
 ```
@@ -223,7 +306,8 @@ src/
 ├── storage/db.py        # schema and idempotent upserts
 ├── analytics/
 │   ├── pnl.py           # attribution, daily returns, roll-ups
-│   └── factors.py       # factor regressions, OLS + Newey-West
+│   ├── factors.py       # factor regressions, OLS + Newey-West
+│   └── risk.py          # VaR, beta, correlation, concentration
 ├── report/plots.py      # charts
 └── checks/reconcile.py  # NAV reconciliation
 ```
@@ -249,6 +333,7 @@ python src/checks/reconcile.py   # verify against the broker's NAV
 python src/analytics/pnl.py      # attribution and daily-return validation
 python src/data/factor_data.py   # Fama-French factor returns
 python src/analytics/factors.py  # factor regressions
+python src/analytics/risk.py     # VaR, beta, correlation, concentration
 python src/report/plots.py       # regenerate the charts above
 ```
 
@@ -288,6 +373,18 @@ control.
 - **Corporate action handling is untested.** The account has had none in
   the window, so the parser for them is written to the documented schema
   but unverified against real data.
+- **The 99% VaR is not usable at this sample size.** Three tail
+  observations is not an estimate. It is printed with its observation
+  count rather than omitted, because the count is the honest way to say
+  so, and it becomes meaningful as the snapshot history accumulates.
+- **VaR has not been cross-checked against the broker's own figure.**
+  Interactive Brokers computes a VaR in Portfolio Analyst, but it is not
+  exposed through the Flex Query, so the comparison stays manual.
+- **Public price data needs cleaning.** The benchmark series carried two
+  mis-scaled days that inflated its volatility from 1.3% to 43% and drove
+  a beta estimate to nearly zero. Ingestion now drops points more than 2×
+  from their own five-day centred median, but this is a mitigation for a
+  known failure mode, not a guarantee against the next one.
 - **Fundamentals history is shallow.** The public source used offers only
   a few years, so any fundamental backtest in later phases is a
   demonstration rather than evidence.
@@ -302,9 +399,9 @@ control.
 | 1 | Flex parsing, SQLite snapshots, market data, NAV reconciliation | Complete |
 | 2 | P&L attribution: stock vs. FX vs. dividends vs. fees | Complete |
 | 4a | Factor exposure against Fama-French factors, US and Japan separately | Complete |
-| 3 | VaR, beta, correlation, concentration | Next |
+| 3 | VaR, beta, correlation, concentration | Complete |
 | 4b–d | Quality/momentum screener, backtest, margin-of-safety sizing | Planned |
-| 5 | Stress tests, including the 2024 yen carry unwind | Planned |
+| 5 | Stress tests, including the 2024 yen carry unwind | Next |
 | 6 | Execution analysis vs. arrival price and VWAP | Planned |
 | 7 | Daily HTML report | Planned |
 

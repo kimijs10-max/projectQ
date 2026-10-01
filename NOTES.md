@@ -369,6 +369,55 @@ Account identifiers are redacted: `ACCOUNT_A` is the trading account,
   without the caveat, but it carries the count inline so it cannot be
   quoted innocently.
 
+## Phase 3 charts (2026-09-30)
+
+Two figures added to `src/report/plots.py`, same design constraints as the
+Phase 4a charts.
+
+**`return_distribution.png`** — histogram of daily base-currency returns
+with both VaR estimates marked and a fitted normal drawn in grey.
+
+The normal curve is deliberately *not* a coloured series. It is the
+assumption under test, not a competing measurement, so it wears chrome
+grey while the two VaR lines take the two categorical slots. That also
+solved a layout problem: the two lines sit 0.12pp apart, far too close to
+label in place, so their values live in a legend block and hue carries
+which line is which.
+
+Also fixed: the shaded tail region originally ran from the first histogram
+bin rather than the axis edge, which put a visible vertical boundary at
+−4% that read as a second, meaningless threshold.
+
+**`correlation_matrix.png`** — daily and weekly panels, lower triangle
+only, on a diverging blue↔grey↔red scale.
+
+Diverging rather than sequential because correlation has a real zero and a
+sign; a single-hue ramp would make −0.30 and +0.30 look like different
+magnitudes of the same thing. Lower triangle only because the matrix is
+symmetric and the diagonal is 1 by construction.
+
+The design decision that matters: **every cell prints its observation
+count.** That is not decoration. It is the same discipline that caught the
+`resample().prod()` bug in the first place, and it is what makes the
+chart's conclusion legible — every pair that swings between the daily and
+weekly panels is also a pair carrying a thin-sample mark, which is
+precisely why the asynchronous-close effect cannot be claimed from this
+data. Without the counts the weekly panel would look like a finding.
+
+Pairs with no overlapping holding period render as "no overlap" rather
+than as an empty or zero-valued cell.
+
+Layout bugs found by rendering and looking, not by reasoning:
+
+- the sample-size footnote overflowed the right edge of the figure
+- the colourbar's end labels, centred on the bar's ends, hung half off
+  the figure
+- the panel titles collided with the column headers
+- one cell read `-0.00`
+
+All four are invisible in code and obvious in the PNG.
+
+
 ## Open items to revisit
 
 - Second linked account (`ACCOUNT_B`) throwing permission errors — harmless

@@ -109,15 +109,18 @@ portfolio-risk/
 - Live Tokyo quotes via API may need a paid subscription; delayed/historical data is fine.
 
 ## Current status
-Phases 0, 1, and 2 done.
+Phases 0, 1, 2, 4a and 3 done.
 - `src/data/flex.py`: downloads the Flex Query (with a retry wrapper around
   ib_async's polling, see NOTES.md), parses positions/trades/cash
   transactions/NAV history/corporate actions/cash report into DataFrames,
   caches raw XML under `data/flex_raw/`.
-- `src/storage/db.py`: SQLite schema (9 tables) + idempotent upsert helper.
+- `src/storage/db.py`: SQLite schema (10 tables) + idempotent upsert helper.
 - `src/data/market_data.py`: yfinance FX (USDSGD direct, JPYSGD derived),
   benchmark (SPY, 1306.T) history, and per-holding daily price history
-  (holding_prices) for every symbol ever held/traded.
+  (holding_prices) for every symbol ever held/traded. Drops mis-scaled
+  price points (>2x from their own 5-day centred median) at ingestion --
+  two bad days in 1306.T inflated the benchmark's volatility from 1.3%
+  to 43% and drove its beta to nearly zero, see NOTES.md.
 - `src/checks/reconcile.py`: sums stored positions (in base currency) +
   cash + accruals and compares to Flex's own NAV. Ran live end-to-end:
   **exact match, 0.000000% difference.**
@@ -131,8 +134,22 @@ Phases 0, 1, and 2 done.
   double-counted pre-window realized P&L, and a missing forward-fill
   across market holidays — see NOTES.md for the full writeup, which is
   good methodology content in its own right).
-Next: Phase 4a — factor exposure (regress against French factors), per the
-build order (done early, before Phase 3).
+- `src/data/factor_data.py` + `src/analytics/factors.py`: Kenneth French
+  factor returns, and per-sleeve regressions with Newey-West HAC standard
+  errors. Headline result in the Phase 4a entry above.
+- `src/analytics/risk.py`: historical and parametric VaR (each with its
+  tail observation count), base-currency benchmark betas, daily and
+  weekly holding correlations alongside their pairwise observation
+  counts, and concentration (max weight, HHI, effective N).
+- `src/report/plots.py`: four charts under `reports/` — factor exposures,
+  rolling betas, return distribution with VaR lines, correlation matrix.
+  Embedded in the README.
+Next: Phase 5 — stress tests. Phase 4b–d (screener upgrade, backtest,
+margin-of-safety sizing) is the other open branch.
+
+Still missing and worth doing before the project is presentable: there are
+no tests in `tests/`, and no single orchestrating entry point — the
+pipeline is a documented sequence of scripts run by hand.
 
 ## Notes
 Keep a running `NOTES.md` of problems hit and how they were solved.
