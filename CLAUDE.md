@@ -90,7 +90,8 @@ portfolio-risk/
   usable estimate at this sample size. Base-currency beta 0.65 to SPY, 0.38 to TOPIX;
   equity HHI 0.243, effective N 4.1. **Still outstanding:** the cross-check against IBKR's
   own VaR report — it is not part of the Flex Query, so it remains a manual comparison.
-- [ ] **4b–d — Screener upgrade, backtest, sizing:** add gross profitability, Piotroski F-Score, 12-1 momentum, P/B < 1 flag (TSE reform); sector-neutral composite; backtest value-only vs. value+quality vs. value+quality+momentum; margin-of-safety sizing from DCF / residual income (banks).
+- [x] **4b–c — Screener + sector-neutral composite:** built; see Current status.
+- [~] **4d — Validation (backtest reframed), and sizing still to do:** add gross profitability, Piotroski F-Score, 12-1 momentum, P/B < 1 flag (TSE reform); sector-neutral composite; backtest value-only vs. value+quality vs. value+quality+momentum; margin-of-safety sizing from DCF / residual income (banks).
 - [ ] **5 — Stress tests:** spring 2025 selloff, Aug 2024 yen carry unwind, March 2020, hypothetical (yen +10%, Nasdaq −15%). Compare to IBKR's stress test report.
 - [ ] **6 — Execution analysis:** fills vs. arrival price and VWAP, slippage in bps; state small-sample caveat.
 - [ ] **7 — Reporting & packaging:** one-page daily HTML report, README with methodology + sample output (weights only), LinkedIn write-up.
@@ -144,8 +145,51 @@ Phases 0, 1, 2, 4a and 3 done.
 - `src/report/plots.py`: four charts under `reports/` — factor exposures,
   rolling betas, return distribution with VaR lines, correlation matrix.
   Embedded in the README.
-Next: Phase 5 — stress tests. Phase 4b–d (screener upgrade, backtest,
-margin-of-safety sizing) is the other open branch.
+- `src/data/fundamentals.py` + `src/screener/quality.py`: Phase 4b. Annual
+  statements stored with an explicit `available_date` (fiscal year-end +
+  90 days) so no read can see a filing before it was public, and four
+  metrics on top — gross profitability, Piotroski F-Score, 12-1 momentum,
+  and P/B with the TSE-reform flag for Tokyo listings. The F-Score is
+  withheld entirely for financial issuers rather than part-scored: see
+  NOTES.md on why seven of nine computable tests would still have been
+  the wrong answer for 8306.T.
+  **Result: the screen independently confirms Phase 4a.** One of five
+  names trades below book, nothing scores above 5 on the F-Score, and the
+  two biggest gainers are the two strongest momentum names. Two
+  independent methods — return covariance and financial statements — now
+  agree this is not academic value.
+- `config/peers.py` + `src/screener/universe.py` + `fetch_universe.py` +
+  `composite.py`: Phase 4c. Hand-curated peer groups, every candidate
+  verified against its own reported sector and instrument type before
+  use (it caught two tickers reused by ETFs after their companies were
+  acquired, eleven delistings, and several of my own misclassifications).
+  132 symbols: 6 holdings + 126 verified peers. Metrics become percentiles
+  within each holding's own peer group; a composite is withheld when a
+  sleeve it names does not exist.
+  **Result: the two biggest gainers were sector beta, and lagging it** —
+  8306.T +62.7% against a Japanese-bank peer median of +86.5% (22nd of
+  23), 9101.T +44.5% against a shipping median of +67.3% (19th of 20).
+  Sector-neutrally the book is still not value-tilted: four of six sit
+  below their sector's median book-to-market. Third independent method,
+  same answer as Phase 4a.
+- `src/screener/validate.py`: Phase 4d. The time-series backtest the build
+  order asked for is not supportable on four annual statements (three
+  rebalances), so the question is asked across companies instead: score
+  the universe as of a past date using only then-available fundamentals,
+  and test the ranking against the next year's return relative to each
+  peer group's median. Two non-overlapping windows, reported separately.
+  **Result: adding quality to value made it worse in both windows.** Value
+  alone +0.183 / +0.091 Spearman; value+quality +0.051 / −0.028. Gross
+  profitability was negatively correlated with within-sector
+  outperformance both years. Value was the only signal to hold a
+  non-negligible sign across both; momentum flipped.
+  This cuts against the book: phases 4a–4c all found it is *not*
+  value-tilted, and 4d finds value is the one signal with consistency
+  behind it. Caveats in NOTES.md are substantial — crude quality proxies,
+  two draws from one regime, survivors only, optimistic p-values.
+Next: margin-of-safety sizing is the remaining piece of phase 4 (DCF, or
+residual income for 8306.T, which the screener already refuses to score).
+Phase 5 (stress tests) and the still-empty tests/ are the other branches.
 
 Still missing and worth doing before the project is presentable: there are
 no tests in `tests/`, and no single orchestrating entry point — the

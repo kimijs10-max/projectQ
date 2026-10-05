@@ -62,7 +62,17 @@ def _download_close(ticker: str, period: str) -> pd.Series:
     df = yf.Ticker(ticker).history(period=period)
     if df.empty:
         return pd.Series(dtype=float)
-    cleaned, dropped = _drop_price_spikes(df["Close"])
+    # Drop null closes before anything else. Yahoo emits a row for the
+    # current session before it has settled -- a Tokyo listing fetched
+    # during Asian hours comes back with today's date and no price. Stored
+    # as-is, that row becomes the most recent price for the symbol, and an
+    # as-of lookup then returns a null that propagates into every metric
+    # built on it. It is not a missing day; it is a day that has not
+    # happened yet.
+    closes = df["Close"].dropna()
+    if closes.empty:
+        return pd.Series(dtype=float)
+    cleaned, dropped = _drop_price_spikes(closes)
     if dropped:
         print(f"  warning: dropped {dropped} mis-scaled price point(s) for {ticker}")
     return cleaned

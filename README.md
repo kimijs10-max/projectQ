@@ -9,8 +9,9 @@ non-trivial: a Tokyo-listed holding can rise in yen while the yen falls
 against the base currency, and the two effects have to be separated before
 either can be judged.
 
-**Status:** data pipeline, P&L attribution, factor exposure and risk complete,
-all validated against the broker's own NAV. Stress tests are next.
+**Status:** data pipeline, P&L attribution, factor exposure, risk and the
+value/quality/momentum screener complete, all validated against the broker's
+own NAV. Stress tests are next.
 
 ---
 
@@ -281,6 +282,213 @@ only the equity sleeve would overstate how concentrated the account is.
 
 ---
 
+## Screener: value, quality and momentum
+
+The factor regression above says what the portfolio is *not*. This section
+builds the metrics to say what it is, from financial statements rather than
+from return covariance — an independent check on the same question.
+
+Four metrics, each chosen for a reason:
+
+- **Gross profitability** — (revenue − cost of revenue) / total assets.
+  The further down the income statement you read, the more the figure has
+  been shaped by depreciation schedules, tax strategy and one-offs. Its
+  value here is that it is *negatively* correlated with book-to-market, so
+  quality and value are additive rather than two names for one bet.
+- **Piotroski F-Score** — nine binary tests across profitability,
+  leverage/liquidity and operating efficiency. Designed to work *within*
+  the value universe: cheap stocks are often cheap because they are dying,
+  and the F-Score separates those from the ones recovering.
+- **12-1 momentum** — return from twelve months ago to one month ago. The
+  skipped month is not a convenience; short-horizon reversal is a separate
+  and opposite effect.
+- **Price-to-book, flagged below 1.0 for Tokyo listings** — in Japan this
+  is a catalyst, not a valuation measure. The Tokyo Stock Exchange's March
+  2023 reform asked sub-book companies to publish capital-efficiency
+  plans.
+
+### No reading before it was knowable
+
+A fiscal year ending 31 March is not public knowledge on 31 March; the
+filing lands in June. Every stored statement row therefore carries an
+explicit availability date of fiscal year-end plus 90 days, and every read
+filters on that column rather than on the fiscal date. A screen run for a
+past date cannot see a filing that had not happened.
+
+The lag is deliberately conservative. A real filing calendar would be more
+precise, but erring late only understates a result, whereas erring early
+manufactures one.
+
+### Refusing to score
+
+A bank reports no cost of revenue and no current/non-current balance-sheet
+split, because neither concept applies to it. That leaves gross
+profitability undefined and two of the nine F-Score tests unevaluable for
+the largest holding.
+
+Seven of nine tests remain computable — and computing them would be the
+real error. A bank's operating cash flow tracks changes in loans and
+deposits; the holding here reports roughly −¥23tn, which says nothing
+about whether the bank is healthy. The cash-flow and accruals tests would
+score balance-sheet growth and label it earnings quality. Piotroski's
+original sample excludes financial firms for exactly this reason, so the
+score is **withheld entirely** rather than reported with a caveat: 4 of 7
+sitting beside a genuine 4 of 7 reads as a weak company rather than an
+unmeasured one.
+
+Detection is structural — no cost of revenue *and* no current/non-current
+split, across every year — rather than a sector label, because the absence
+of both concepts is the balance sheet itself saying what the company is.
+
+---
+
+## Sector-neutral ranking
+
+A raw metric means little across sectors. Gross profitability of 0.08 is
+poor for a software company and ordinary for a shipping line; a
+price-to-book of 0.95 is cheap for a semiconductor maker and unremarkable
+for a Japanese regional bank. Ranking one list would mostly rank sectors.
+
+So each holding is scored against its own verified peer group — 132
+symbols in total, six holdings and 126 peers — and no number is compared
+across groups.
+
+### Curate by hand, verify by machine
+
+There is no free source of clean sector membership for a mixed
+Tokyo/US/Greek/Danish universe, so the peer lists are hand-written. That
+makes them the weakest link: a mistyped or repurposed ticker sits silently
+inside a group and shifts every percentile in it. So nothing curated is
+trusted — each candidate must resolve to an *equity* whose reported sector
+matches its holding's, and the rejections are printed.
+
+It earned its place immediately.
+
+**Ticker reuse.** `EGLE` belonged to Eagle Bulk Shipping until Star Bulk
+acquired it, and now belongs to a Global X S&P 500 ETF. `GOGL` belonged to
+Golden Ocean until the CMB.TECH merger, and now belongs to a 2×
+leveraged Google ETF. Both return live price data and would survive any
+"does this ticker resolve?" check. Only the instrument type distinguishes
+them from the shipping companies they used to be — which is why the equity
+test is explicit rather than incidental.
+
+**Taxonomy encoding a real distinction.** Six oil-tanker operators were
+rejected as Energy rather than Industrials. That is correct: crude and
+product tankers classify under Energy, while dry bulk, container and car
+carriers sit under Industrials. The holding is the latter, so the
+rejection kept the comparison inside one cycle instead of blurring two.
+
+Also dropped: eleven delisted tickers, including five Japanese regional
+banks that reorganised into holding companies under new codes, and several
+of the author's own misclassifications.
+
+### The result that reframes everything else
+
+| | Holding's 12-1 return | Peer median | Rank |
+|---|---|---|---|
+| Tokyo-listed bank vs Japanese banks | +62.7% | **+86.5%** | 22 of 23 |
+| Tokyo-listed shipper vs marine shipping | +44.5% | **+67.3%** | 19 of 20 |
+
+On raw momentum these are the two strongest names in the book. Against
+their own sectors they are near the bottom. Japanese banks rallied on rate
+normalisation and shipping on freight rates; the positions captured the
+sector and gave back 23 to 24 points of it.
+
+*"I owned a stock that rose 63%"* and *"I picked a good bank"* are
+different claims. This is the view that separates them.
+
+Percentiles within each holding's own peer group, 100 = best:
+
+| | B/M | gross prof. | F | mom | value | +quality | +mom |
+|---|---|---|---|---|---|---|---|
+| 4180.T | 56 | 56 | 22 | 39 | 56 | 47 | 44 |
+| 5105.T | 45 | **100** | 14 | 41 | 45 | 51 | 48 |
+| 8306.T | 17 | — | — | 9 | 17 | withheld | withheld |
+| 9101.T | 68 | 60 | 25 | 10 | 68 | 55 | 40 |
+| NVDA | 13 | **100** | 7 | 39 | 13 | 33 | 35 |
+| SHOP | 28 | 42 | 38 | 42 | 28 | 34 | 37 |
+
+Two readings worth drawing out. Sector-neutralising moves the value
+conclusion: a 1.88× price-to-book looks moderate in isolation but ranks
+20th of 23 against Japanese banks. And four of six holdings sit below
+their sector's median book-to-market, so **the book is not value-tilted on
+a sector-neutral basis either** — a third independent method reaching the
+factor regression's conclusion.
+
+The 7th-percentile F-Score on the semiconductor holding is *not* a quality
+verdict; it has the best gross profitability in its group. The F-Score
+rewards year-on-year improvement and balance-sheet conservatism, so a
+company already at peak margins and investing heavily scores badly even
+when the business is exceptional. It is the wrong instrument for that
+name, and saying so is more useful than quoting the number.
+
+A composite is withheld when a sleeve it names does not exist: "value +
+quality" computed without a quality measurement is the value score under
+another label, and would sit in the same column as composites that
+genuinely carry both.
+
+---
+
+## Does any of it predict anything?
+
+The build order called for a backtest of value-only against value+quality
+against value+quality+momentum. That is not supportable on this data: the
+free fundamentals source gives four or five annual statements, so after
+the reporting lag there are three or four annual rebalances. Three
+observations is an anecdote, and a weak backtest is worse than none —
+a reader who notices the sample size discounts everything near it.
+
+So the question is asked **across companies rather than across time**.
+Each name is scored as of a past date using only fundamentals available
+then, and the ranking is tested against the following year's return
+*relative to its own peer group's median*. That trades time-series depth,
+which this data lacks, for cross-sectional breadth, which it has: ~130
+names per window instead of three rebalances. Two non-overlapping annual
+windows, reported separately and never pooled.
+
+Spearman rank correlation of each signal against forward excess return:
+
+| Signal | 2024-09 → 2025-09 | 2025-09 → 2026-09 | Verdict |
+|---|---|---|---|
+| Book-to-market | **+0.183** | +0.091 | positive both |
+| Gross profitability | −0.124 | **−0.164** | negative both |
+| F-Score ratio | −0.050 | −0.069 | negative, negligible |
+| 12-1 momentum | −0.055 | +0.152 | **sign flips** |
+| Value | **+0.183** | +0.091 | positive both |
+| Value + quality | +0.051 | −0.028 | one negligible |
+| Value + quality + momentum | +0.045 | +0.097 | one negligible |
+
+**The answer is the opposite of the expected one: adding quality to value
+made it worse, in both windows.** Gross profitability was negatively
+related to within-sector outperformance in both years, and in the second
+window the tercile spread was −36.7% — the top third by gross
+profitability averaged +0.7% against its sector while the bottom third
+averaged +37.4%. Value was the only signal to hold a non-negligible sign
+across both windows. Momentum changed sign, which rules out reading either
+window's momentum result alone.
+
+This does **not** say the gross-profitability literature is wrong. The
+proxy here is annual gross profitability from a free data source plus a
+coarse F-Score ratio available for only 82 to 108 of 132 names, against a
+literature built on far better data and decades of history. Two adjacent
+windows are two draws from one regime, dominated by the same bank and
+shipping rallies. Every name is a survivor — not a hypothetical concern
+given that two candidate tickers turned out to be ETFs occupying the codes
+of acquired companies. And the p-values assume independent observations,
+which returns in a single cross-section are not.
+
+What it supports is narrower and still worth saying: in this universe over
+these two years, quality as measured here detracted from value rather than
+adding to it, and value was the only signal that held its direction.
+
+That lands awkwardly against the portfolio, which is the point. Three
+methods already concluded the book is not value-tilted. The validation
+then finds value is the one signal in this data with any consistency
+behind it. **So the strategy as implemented underweights the only factor
+this data supports** — a conclusion kept because it is not flattering.
+
+---
+
 ## Architecture
 
 ```
@@ -301,8 +509,15 @@ src/
 │   ├── flex.py          # Flex download, XML parsing, raw-statement caching
 │   ├── market_data.py   # FX, benchmark and per-holding price history
 │   ├── factor_data.py   # Fama-French factors (Kenneth French library)
+│   ├── fundamentals.py  # annual statements, stored with availability dates
 │   ├── test_flex.py     # connectivity test: positions via Flex
 │   └── test_live.py     # connectivity test: positions via IB Gateway
+├── screener/
+│   ├── quality.py       # gross profitability, F-Score, momentum, P/B
+│   ├── universe.py      # peer-group resolution and verification
+│   ├── fetch_universe.py# bulk fundamentals and prices for the universe
+│   ├── composite.py     # sector-neutral percentiles and composites
+│   └── validate.py      # cross-sectional validation over two windows
 ├── storage/db.py        # schema and idempotent upserts
 ├── analytics/
 │   ├── pnl.py           # attribution, daily returns, roll-ups
@@ -335,6 +550,17 @@ python src/data/factor_data.py   # Fama-French factor returns
 python src/analytics/factors.py  # factor regressions
 python src/analytics/risk.py     # VaR, beta, correlation, concentration
 python src/report/plots.py       # regenerate the charts above
+```
+
+Then the screener, which has its own universe to assemble:
+
+```bash
+python src/data/fundamentals.py      # statements for the holdings
+python src/screener/quality.py       # the four metrics, holdings only
+python src/screener/universe.py      # resolve and verify peer groups
+python src/screener/fetch_universe.py# fundamentals + prices for all 132
+python src/screener/composite.py     # sector-neutral percentiles
+python src/screener/validate.py      # cross-sectional validation
 ```
 
 The live-position test additionally needs IB Gateway running on port 4001
@@ -385,9 +611,23 @@ control.
   a beta estimate to nearly zero. Ingestion now drops points more than 2×
   from their own five-day centred median, but this is a mitigation for a
   known failure mode, not a guarantee against the next one.
-- **Fundamentals history is shallow.** The public source used offers only
-  a few years, so any fundamental backtest in later phases is a
-  demonstration rather than evidence.
+- **Fundamentals history is shallow.** The public source offers four or
+  five annual statements, which is why the screener is validated
+  cross-sectionally rather than backtested through time — three annual
+  rebalances would not support the latter.
+- **Peer groups are hand-curated.** Verification against each issuer's
+  reported sector and instrument type catches wrong tickers, but it
+  cannot catch a *missing* peer, so a group may be unrepresentative in
+  ways the rejections do not reveal.
+- **Survivorship bias is live, not theoretical.** The universe is built
+  from tickers trading today. Two candidates turned out to be ETFs
+  occupying the codes of shipping companies that had been acquired, which
+  is the bias in its most concrete form.
+- **Quality is crudely measured.** Annual gross profitability from a free
+  source plus an F-Score ratio available for 82 to 108 of 132 names is a
+  weak proxy for the constructs in the literature, so the finding that
+  quality detracted from value is a result about this measurement in this
+  universe, not about the factor.
 
 ---
 
@@ -400,7 +640,9 @@ control.
 | 2 | P&L attribution: stock vs. FX vs. dividends vs. fees | Complete |
 | 4a | Factor exposure against Fama-French factors, US and Japan separately | Complete |
 | 3 | VaR, beta, correlation, concentration | Complete |
-| 4b–d | Quality/momentum screener, backtest, margin-of-safety sizing | Planned |
+| 4b–c | Quality/momentum screener, sector-neutral composite | Complete |
+| 4d | Cross-sectional validation (backtest reframed; see above) | Complete |
+| 4d | Margin-of-safety sizing from DCF / residual income | Planned |
 | 5 | Stress tests, including the 2024 yen carry unwind | Next |
 | 6 | Execution analysis vs. arrival price and VWAP | Planned |
 | 7 | Daily HTML report | Planned |

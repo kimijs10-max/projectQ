@@ -3,8 +3,10 @@ SQLite storage for daily snapshots pulled from IBKR Flex and market data.
 
 Six tables map directly to the sections of the configured Flex Query:
 positions, trades, cash_transactions, nav_history, corporate_actions,
-cash_report. Two more (fx_rates, benchmark_prices) hold history pulled
-from yfinance in market_data.py.
+cash_report. Three more (fx_rates, benchmark_prices, holding_prices) hold
+price history pulled from yfinance in market_data.py, factor_returns holds
+the Kenneth French factors, and fundamentals holds annual financial
+statement line items for the screener.
 
 All writes are idempotent upserts keyed on each table's natural primary
 key, so re-running the same day's pull never creates duplicates.
@@ -166,6 +168,57 @@ SCHEMA = {
             factor TEXT NOT NULL,
             value REAL,
             PRIMARY KEY (date, region, factor)
+        )
+    """,
+    # Daily closes for the screening universe (holdings and their verified
+    # peers), in each symbol's own local currency.
+    #
+    # Deliberately separate from holding_prices rather than shared with
+    # it. holding_prices is populated from symbols the account has
+    # actually held, and anything reading it is entitled to assume that;
+    # dropping 140 peer tickers into it would make the table quietly lie
+    # about what the account owns. The duplicated rows for the holdings
+    # themselves are public price data and cost nothing.
+    "screen_prices": """
+        CREATE TABLE IF NOT EXISTS screen_prices (
+            date TEXT NOT NULL,
+            symbol TEXT NOT NULL,
+            close REAL,
+            PRIMARY KEY (date, symbol)
+        )
+    """,
+    # Issuer classification, used to verify peer groups. Stored rather
+    # than fetched on demand because the peer sets are hand-curated and
+    # the whole point of the table is to let the data contradict the
+    # curation -- a ticker that resolves into the wrong sector must be
+    # caught and dropped, not silently ranked.
+    "security_meta": """
+        CREATE TABLE IF NOT EXISTS security_meta (
+            symbol TEXT PRIMARY KEY,
+            short_name TEXT,
+            sector TEXT,
+            industry TEXT,
+            quote_type TEXT,
+            currency TEXT,
+            fetched_at TEXT
+        )
+    """,
+    # Annual financial-statement line items, long format.
+    #
+    # available_date is stored rather than derived at read time so the
+    # look-ahead lag is visible in the data itself: a fiscal year ending
+    # 2026-03-31 is not public knowledge on 2026-03-31, and any screen or
+    # backtest that reads fiscal_date as the knowledge date is fiction.
+    # Every query that scores a point in time filters on available_date.
+    "fundamentals": """
+        CREATE TABLE IF NOT EXISTS fundamentals (
+            symbol TEXT NOT NULL,
+            fiscal_date TEXT NOT NULL,
+            available_date TEXT NOT NULL,
+            statement TEXT NOT NULL,
+            item TEXT NOT NULL,
+            value REAL,
+            PRIMARY KEY (symbol, fiscal_date, statement, item)
         )
     """,
 }

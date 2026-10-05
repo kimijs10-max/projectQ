@@ -418,6 +418,384 @@ Layout bugs found by rendering and looking, not by reasoning:
 All four are invisible in code and obvious in the PNG.
 
 
+## Phase 4b — Screener metrics (2026-10-01)
+
+`src/screener/` did not exist; "screener upgrade" in the build order was
+aspirational. Built from scratch: `src/data/fundamentals.py` (fetch and
+store annual statements) and `src/screener/quality.py` (the four metrics).
+
+New table `fundamentals`, long format
+`(symbol, fiscal_date, available_date, statement, item, value)`.
+
+### The reporting lag is stored, not assumed
+
+`available_date` = fiscal_date + 90 days, written into the row rather than
+applied at read time. A fiscal year ending 2026-03-31 is not public
+knowledge on 2026-03-31; 8306.T files in June. Every read goes through
+`fundamentals.as_of(knowledge_date)`, which filters on that column, so a
+screen run for a past date cannot see a filing that had not happened.
+
+The holdings already span three fiscal year-ends — March (8306.T),
+December (4180.T, 5105.T, SHOP) and January (NVDA) — so this had to be
+per-company off its own year-end, never a calendar rule.
+
+### Three real problems, found by checking rather than by trusting
+
+**1. Statements are out of sync at the source.** 5105.T has income and
+cash-flow statements through 2025-12-31 but a balance sheet only through
+2024-12-31. Verified directly against yfinance, so it is upstream, not a
+parser bug.
+
+The first version took the latest `fiscal_date` as the current year,
+which for 5105.T selected a row with no balance sheet at all: gross
+profitability, P/B and three F-Score tests all came back unavailable, even
+though the fetcher had reported the symbol as having complete coverage.
+That contradiction is what exposed it.
+
+Fixed by anchoring every metric to the latest fiscal year with a complete
+balance sheet, and reporting the staleness. The alternative — pairing the
+2025 income statement with 2024 assets — would build a ratio out of two
+vintages, and ROA already uses beginning-of-year assets, so vintage
+consistency matters more than freshness. 5105.T now scores 5/9 with gross
+profitability 0.319 and P/B 1.26.
+
+**2. An absent line item is not a zero, and the data proves it.** SHOP's
+`Long Term Debt` row is absent for 2024 and 2025. The tempting read is
+"no debt, so zero". But 4180.T reports an explicit `0.0` for 2024 and a
+positive figure for 2025 — so yfinance *does* write a real zero when it
+means zero, and an absent row therefore means not reported. The
+leverage test is left unscored for SHOP rather than passed by default.
+Had I defaulted absent to zero, SHOP would have scored a free point.
+
+**3. The F-Score does not apply to banks, and the missing fields are the
+weaker half of the reason.** 8306.T (Mitsubishi UFJ) reports no cost of
+revenue and no current/non-current balance-sheet split, which kills gross
+profitability and two of the nine tests outright.
+
+I initially described this as five of nine tests lost. That was wrong —
+the direct count is two (gross margin, current ratio), leaving seven
+computable. But computing those seven would have been the real mistake.
+A bank's operating cash flow tracks changes in loans and deposits:
+8306.T reports roughly **−¥23tn**, which says nothing whatever about
+whether the bank is healthy. So the cash-flow and accruals tests would
+have scored balance-sheet growth and labelled it earnings quality.
+
+Piotroski's original sample excludes financial firms for exactly this
+reason. The score is now withheld entirely, with a reason, rather than
+reported as 4/7 with a caveat — 4/7 sitting beside a genuine 4/7 reads as
+a weak company rather than an unmeasured one.
+
+Detection is structural (no cost of revenue *and* no current/non-current
+split, across all years) rather than a sector string, because the absence
+of both concepts is the balance sheet itself saying what the company is,
+and a sector label can be missing or wrong. It also generalises to any
+issuer whose statements lack the inputs. VNQ, an ETF held earlier in the
+window, returns no statements at all and drops out before this point.
+
+### What the screen says about the book
+
+| | gross prof. | F-score | 12-1 mom. | P/B |
+|---|---|---|---|---|
+| 4180.T | 0.389 | 5/9 | −4.1% | 3.83 |
+| 5105.T | 0.319 | 5/9 | +1.4% | 1.26 |
+| 8306.T | — | withheld | +62.7% | 1.88 |
+| 9101.T | 0.083 | 4/9 | +44.5% | 0.95 |
+| NVDA | 0.742 | 4/9 | +16.3% | 35.29 |
+| SHOP | 0.366 | 5/8 | −6.5% | 14.35 |
+
+Five names is a description, not evidence, and nothing here is a
+statistic. But the description is consistent and it confirms Phase 4a
+from independent data.
+
+- **Not value on book multiples.** One name of five trades below book.
+  Two trade at 14x and 35x.
+- **Not high quality on the F-Score.** Nothing scores above 5. Piotroski
+  treats 8–9 as high; the book has no high-F-Score name in it.
+- **The two biggest gainers are the two strongest momentum names**
+  (8306.T +63%, 9101.T +45%).
+
+Phase 4a's factor regression found no positive HML loading. This screen
+reaches the same conclusion from financial statements rather than return
+covariance — two independent methods, one answer. It also adds what 4a
+could not: the book looks closer to momentum plus a US quality/growth
+tilt (NVDA's 0.742 gross profitability is genuinely exceptional) than to
+value on any academic definition.
+
+The same caveat as Phase 4a still applies and still matters: P/B *is* the
+book-to-market construct that firm-foundation investing does not use, so a
+high multiple is not by itself evidence of departing from the strategy — a
+DCF investor can rationally own a 35x-book company. The defensible claim
+is the narrow one, now doubly supported: **this is not academic value.**
+Whether it is *good* is a different question, and neither phase answers
+it.
+
+One profile does deserve flagging on its own terms. 9101.T is cheap
+(P/B 0.95, TSE reform flag set), low quality (gross profitability 0.083),
+and middling on the F-Score at 4/9. Cheap plus weak fundamentals plus
+strong recent price is the "cheap for a reason" profile the F-Score exists
+to separate out, and 4/9 is not reassuring about which side of that line
+it sits on.
+
+
+## Phase 4c — Sector-neutral composite (2026-10-01)
+
+Peer groups in `config/peers.py`, verification in `src/screener/universe.py`,
+bulk fetch in `src/screener/fetch_universe.py`, scoring in
+`src/screener/composite.py`. Two new tables: `security_meta` (issuer
+classification) and `screen_prices` (prices for the screening universe,
+deliberately separate from `holding_prices` so that table keeps meaning
+"things this account held").
+
+Universe: 6 holdings + 126 verified peers = 132 symbols.
+
+### Curate by hand, verify by machine
+
+There is no free source of clean sector membership for a mixed
+Tokyo/US/Greek/Danish universe, so the peer lists are hand-written. That
+makes them the weakest link in the whole screen: a mistyped or repurposed
+ticker sits silently inside a group and shifts every percentile computed
+in it. So nothing curated is trusted — every candidate must resolve to an
+equity whose reported sector matches its holding's, and the rejects are
+printed.
+
+It caught more than expected.
+
+**Ticker reuse, which is survivorship bias with teeth.** `EGLE` was Eagle
+Bulk Shipping until Star Bulk acquired it; it is now a Global X S&P 500
+ETF. `GOGL` was Golden Ocean until the CMB.TECH merger; it is now a *2x
+leveraged Google ETF*. Both return live price data and would pass any
+"does this ticker resolve?" test. Only the instrument type gives them
+away, so the equity check is now explicit rather than incidental — the
+first version excluded them only because ETFs happen to report no sector,
+which is luck, not design.
+
+**Eleven genuinely dead tickers**, including five Japanese regional banks
+(Shizuoka, Kyoto, Hiroshima, Chugoku, Iyo) that reorganised into holding
+companies under new codes. Their successors are now in the list.
+
+**Six tanker operators rejected as Energy rather than Industrials.** This
+is correct taxonomy, not a glitch: crude and product tanker operators
+classify under Energy, while dry bulk, container and car carriers sit
+under Industrials/Marine Shipping. NYK is the latter, so the rejection
+kept the comparison inside one cycle instead of blurring two. The
+classification encoded a distinction I was about to lose.
+
+**Several of my own misclassifications** — DeNA, Mercari, Nexon,
+CyberAgent, Etsy, eBay, PayPal and AppLovin all sit outside their
+intended holding's sector, and 4588.T turned out to be Healthcare.
+
+### A null price that produced a plausible answer
+
+First composite run returned **no value sleeve for any Japanese holding**
+— four of six. Not an error, just four blanks, and the output read as a
+reasonable "insufficient data" result.
+
+It was wrong. The holdings-only screen an hour earlier had produced P/B
+for all four, which is the only reason it got questioned.
+
+Cause: the fetch ran on 2026-10-01 while the Tokyo session was unsettled,
+and yfinance returns a row dated today with a null close for every
+Japanese listing. 58 such rows went into `screen_prices`. `_price_asof`
+took the last row on or before the target date without checking for
+nulls, so every as-of price lookup for a Japanese name returned NaN, and
+P/B went with it. Gross profitability was unaffected because it never
+touches a price, which is exactly why the failure looked selective and
+therefore plausible.
+
+Fixed in two places. At ingestion, `market_data._download_close` now drops
+null closes before anything else — it is not a missing day, it is a day
+that has not happened yet. At lookup, `_price_asof` drops nulls before
+selecting, because an as-of function should never return one regardless
+of what is stored.
+
+`benchmark_prices` also held one null close. Phase 3 turned out to be
+unaffected — `_benchmark_base_returns` already calls `.dropna()` on the
+joined frame — and re-running risk.py reproduced every figure exactly
+(vol 17.9%, VaR 1.90/1.78, beta 0.652/0.379). Verified rather than
+assumed.
+
+This is the third bug of the same family in this project: fabricated
+zeros from `resample().prod()`, mis-scaled benchmark prints, and now null
+closes. All three produced output that looked plausible. The pattern is
+that bad data rarely announces itself — it is caught by a cross-check
+against a number computed a different way.
+
+### Results
+
+Percentile within the holding's own peer group, 100 = best.
+
+| | B/M | gross prof. | F | mom | value | +quality | +mom |
+|---|---|---|---|---|---|---|---|
+| 4180.T | 56 | 56 | 22 | 39 | 56 | 47 | 44 |
+| 5105.T | 45 | 100 | 14 | 41 | 45 | 51 | 48 |
+| 8306.T | 17 | — | — | 9 | 17 | withheld | withheld |
+| 9101.T | 68 | 60 | 25 | 10 | 68 | 55 | 40 |
+| NVDA | 13 | 100 | 7 | 39 | 13 | 33 | 35 |
+| SHOP | 28 | 42 | 38 | 42 | 28 | 34 | 37 |
+
+**The headline: the two biggest gainers were sector beta, and lagging
+sector beta at that.**
+
+| | holding | peer median | rank |
+|---|---|---|---|
+| 8306.T vs Japanese banks | +62.7% | +86.5% | 22 of 23 |
+| 9101.T vs marine shipping | +44.5% | +67.3% | 19 of 20 |
+
+Raw momentum said these were the book's two strongest names. Against
+their own sectors they are close to the bottom. Japanese banks rallied on
+rate normalisation and shipping on freight rates; the positions captured
+the sector and gave back roughly 23–24 points of it. "I owned a stock that
+rose 63%" and "I picked a good bank" are different claims, and the
+sector-neutral view separates them.
+
+Three further readings:
+
+- **Sector-neutralising moves the value conclusion.** Raw P/B made 8306.T
+  look moderate at 1.88x. Against Japanese banks it is 20th of 23 — on
+  the expensive side of its own sector. Four of six holdings sit below
+  their sector's median book-to-market, so the book is not value-tilted
+  on a sector-neutral basis either. Third independent method, same
+  answer as Phase 4a.
+- **NVDA's F-Score percentile of 7 is not a quality verdict.** It has the
+  best gross profitability in its group (100th percentile). The F-Score
+  rewards year-on-year *improvement* and balance-sheet conservatism —
+  falling leverage, rising current ratio, no dilution, rising margin and
+  turnover — so a company already at peak margins and investing heavily
+  scores badly even when the business is outstanding. Piotroski designed
+  it for distressed value names. For NVDA the gross profitability reading
+  is the informative one and the F-Score is the wrong instrument.
+- **The composite columns do not test the strategy.** value averages 37.8,
+  +quality 44, +momentum 40.8 across six names. With n=6 and no
+  out-of-sample test these are descriptions, not evidence, and nothing
+  about "quality improves the book" can be claimed from them. That is
+  what the 4d backtest would be for.
+
+### Design decision: when a sleeve is withheld
+
+A sleeve named in a composite must exist. 8306.T gets a value score (17)
+but no value+quality and no value+quality+momentum, because "value +
+quality" computed without a quality measurement is the value score under
+another label, and it would sit in the same column as composites that
+genuinely carry both.
+
+A sleeve may be *internally* partial and still form — quality blends
+gross profitability and the F-Score ratio, and one of the two is enough,
+with the component count reported. The distinction is deliberate: a
+half-measured sleeve is noisier, an absent sleeve is not a measurement.
+
+The F-Score ratio is only used when at least 7 of 9 tests were evaluable.
+Below that, score-over-evaluable is too coarse to rank on — 3 of 4 and 6
+of 8 are the same number from very different evidence.
+
+
+## Phase 4d — Cross-sectional validation (2026-10-01)
+
+The build order asked for a backtest of value-only against value+quality
+against value+quality+momentum. Built literally that is not possible here:
+yfinance supplies four or five annual statements, so after the 90-day
+reporting lag there are three or four annual rebalances. Three
+observations is an anecdote, and a weak backtest in the repo is worse than
+none — a reader who notices the sample size discounts everything near it.
+
+So the question is asked **across companies instead of across time**.
+Every name in the universe is scored as of a past date using only
+fundamentals available then, and the ranking is tested against the
+following year's return *relative to its own peer group's median*. That
+trades time-series depth, which this data lacks, for cross-sectional
+breadth, which it has: ~130 names rather than three rebalances.
+
+Returns are measured against the group median for the reason Phase 4c made
+unavoidable — sector moves dominate single names over a year. The sector
+medians over the two windows: Japanese banks +56.9% then +82.4%, shipping
+−1.6% then +63.6%. A raw forward return would almost entirely measure
+which industry was in favour.
+
+### Two windows, not one
+
+Initially one window. Extended to two non-overlapping years once the price
+history was long enough, because the test's central weakness is being a
+single draw, and a signal that reverses between adjacent years tells you
+something a single window cannot. They are reported separately and never
+pooled — pooling adjacent cross-sections inflates n without adding
+independent information.
+
+That required re-fetching prices at 5 years rather than 2. A 12-1 momentum
+measured as of a date one year back needs two years of prices *before*
+that date plus the forward year. With 2 years fetched, momentum was
+unavailable for 130 of 132 names and every composite containing it was
+withheld — correctly, by the sleeve rule, which is why it showed up as
+blanks rather than as wrong numbers.
+
+### Results
+
+Spearman rho of each signal's within-group percentile against forward
+excess return.
+
+| signal | 2024-09 → 2025-09 | 2025-09 → 2026-09 | verdict |
+|---|---|---|---|
+| book-to-market | **+0.183** (p 0.035) | +0.091 | positive both |
+| gross profitability | −0.124 | **−0.164** | negative both |
+| F-Score ratio | −0.050 | −0.069 | negative, negligible |
+| 12-1 momentum | −0.055 | +0.152 | **sign flips** |
+| value | **+0.183** | +0.091 | positive both |
+| value + quality | +0.051 | −0.028 | one negligible |
+| value + quality + momentum | +0.045 | +0.097 | one negligible |
+
+**The build order's question gets a clear answer, and it is the opposite
+of the expected one: adding quality to value made it worse, in both
+windows.** Value alone scored +0.183 and +0.091; value+quality +0.051 and
+−0.028. Gross profitability had a negative rank correlation with
+within-sector outperformance in both years, and in the second window the
+tercile spread was −36.7% — the top third by gross profitability averaged
++0.7% against its sector while the bottom third averaged +37.4%.
+
+This is consistent with the single most visible case in the book: NVDA has
+the highest gross profitability in its peer group and returned −33.7%
+against that group over the second window.
+
+**Value was the only signal to hold a non-negligible sign across both
+windows**, and the only one to reach nominal p < 0.05.
+
+**Momentum flipped sign** (−0.055 then +0.152), which rules out reading
+either window's momentum result on its own.
+
+### What this does and does not support
+
+It does *not* say Novy-Marx is wrong. The quality proxies here are crude —
+annual gross profitability from a free data source, plus an F-Score ratio
+available for only 82 to 108 of 132 names — against a literature built on
+far better data and decades of history. Two adjacent windows are two draws
+from one regime, dominated by the Japanese bank and shipping rallies. Every
+name is a survivor, which is not hypothetical given that two candidate
+tickers turned out to be ETFs sitting on the codes of acquired shipping
+companies. And the p-values assume independent observations, which returns
+in a single cross-section are not, so they are optimistic by an unknown
+margin.
+
+What it does support is narrower and still useful: **in this universe over
+these two years, quality as measured here detracted from value rather than
+adding to it, and value was the only signal that held its direction.**
+
+That lands awkwardly against the book, and the awkwardness is the point.
+Phases 4a, 4b and 4c all concluded independently that the portfolio is not
+value-tilted — no positive HML loading, one of five names below book, four
+of six below their sector's median book-to-market. Phase 4d now finds that
+value is the one signal in this data with any consistency behind it. So the
+strategy as implemented is underweighting the only factor the data
+supports. That is a conclusion worth defending in an interview precisely
+because it is not flattering.
+
+### A labelling bug in my own verdict column
+
+First run reported `value+quality+momentum` (+0.045, +0.097) as "sign
+flips". Both coefficients are positive; one simply fell inside the 0.05
+dead band I had added for negligible correlations, and my condition
+conflated "too small to call a direction" with "changed direction". Fixed
+by separating the two verdicts. Worth recording because it is the same
+error in miniature as everything else in this log: a threshold doing one
+job while being read as if it did another.
+
+
 ## Open items to revisit
 
 - Second linked account (`ACCOUNT_B`) throwing permission errors — harmless
