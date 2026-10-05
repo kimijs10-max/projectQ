@@ -1131,6 +1131,71 @@ database lacks.
 - Market impact is not modelled and does not need to be at this size.
 
 
+## Phase 7 — Daily report and a single entry point (2026-10-05)
+
+`src/report/build_report.py` renders `reports/daily_report.html`: one
+page answering the four questions for the latest day, plus the valuation
+view and a "can these numbers be trusted today" section.
+`src/run_daily.py` is the one command that refreshes the data, checks it
+and builds the page.
+
+### Design decisions
+
+**No currency amount can reach the page.** Each section function converts
+to fractions of NAV before it returns, and the page template is given
+only those. The rule is structural rather than a review step: there is no
+variable holding NAV or a position value in scope where the HTML is
+assembled. The built file is also scanned for the account-number pattern
+before it is committed.
+
+**One self-contained file.** Inline CSS, inline SVG charts drawn by the
+script, no JavaScript, no network requests. It opens from disk and
+survives being emailed. There was no templating library in the
+environment and adding one for a single page was not worth a dependency.
+
+**Every chart sits beside the table it was drawn from**, uses the same
+two palette slots as plots.py in the same order, and has a dark variant
+chosen for the dark surface. Bars grow from a single zero line with the
+value at the tip.
+
+**A missing input degrades one section, not the page.** No intraday bars
+or no scenario prices produces a one-line "not available" with the
+command that fixes it.
+
+**The daily run continues past a failed step and says so.** The report is
+built from whatever is stored, its own checks section shows the data date
+and whether reconciliation holds, and the run exits non-zero if anything
+failed so a scheduler can tell. Exception text is not printed, only the
+exception type — broker-library messages can contain account identifiers
+(Phase 6).
+
+### Things hit
+
+**The report disagrees with the README, correctly.** The page shows
+one-day 95% VaR of 1.85% where the README's Phase 3 section says 1.90%,
+and 0.64x for 5105.T where Phase 4's table says 0.63x. The README records
+each phase as of the day it was written; the report is recomputed on
+today's data. The README sections carry dates for that reason.
+
+**A transient "disk I/O error" opening the database.** Once, mid-session;
+the file opened normally seconds later and `PRAGMA integrity_check`
+returned ok. The project folder is on an iCloud-synced Desktop (see the
+.venv note above), and a sync touching a 25 MB SQLite file between writes
+is the likely cause. Not reproduced. If it recurs, moving `data/` out of
+the synced folder, as was done for .venv, is the fix.
+
+**The palette validator could not be run** (no Node.js on this machine).
+The two series colours are the reference palette's documented slots 1 and
+2, the same pair plots.py already uses; nothing new was introduced.
+
+### Still open in Phase 7
+
+- The LinkedIn write-up.
+- `reconcile.py` prints the account number and NAV to the terminal. That
+  is local output, not a public one, but `run_daily.py` now calls it, so
+  a scheduler's log would capture both. Worth masking before scheduling.
+
+
 ## Open items to revisit
 
 - Second linked account (`ACCOUNT_B`) throwing permission errors — Phase 6

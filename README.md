@@ -12,7 +12,7 @@ either can be judged.
 **Status:** data pipeline, P&L attribution, factor exposure, risk and the
 value/quality/momentum screener and intrinsic-value sizing complete, all
 validated against the broker's own NAV, plus historical and hypothetical
-stress tests and execution analysis. The daily report is next.
+stress tests, execution analysis and a one-page daily report.
 
 ---
 
@@ -641,6 +641,29 @@ The checks are the more transferable part:
 
 ---
 
+## The daily report
+
+Everything above is recomputed each day into one page:
+
+![Daily portfolio risk report](reports/daily_report.png)
+
+[`reports/daily_report.html`](reports/daily_report.html) is a single
+self-contained file — inline CSS and SVG, no JavaScript, no network
+requests — built by `src/report/build_report.py`. It answers the four
+questions for the latest day, shows the valuation view, and ends with a
+section on whether the numbers can be trusted today: the reconciliation
+against the broker's NAV and the tracking error of the attribution.
+
+No figure on it is a currency amount. Every number is a percent of NAV, a
+weight, a ratio or basis points, and that is structural: the functions
+that build each section convert to fractions of NAV before anything
+reaches the page.
+
+The figures on the page are as of the day it was built, so they differ
+slightly from the dated sections above.
+
+---
+
 ## Architecture
 
 ```
@@ -679,7 +702,10 @@ src/
 │   ├── risk.py          # VaR, beta, correlation, concentration
 │   ├── stress.py        # historical replays and hypothetical shocks
 │   └── tca.py           # execution vs. arrival price, VWAP and close
-├── report/plots.py      # charts
+├── report/
+│   ├── plots.py         # charts
+│   └── build_report.py  # the one-page daily HTML report
+├── run_daily.py         # refresh, reconcile, build the report
 └── checks/reconcile.py  # NAV reconciliation
 ```
 
@@ -695,7 +721,14 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env        # then fill in FLEX_TOKEN and FLEX_QUERY_ID
 ```
 
-Then, in order:
+The daily run is one command — refresh the statement and prices,
+reconcile, fetch intraday bars if IB Gateway is up, build the report:
+
+```bash
+python src/run_daily.py
+```
+
+The individual steps, in order:
 
 ```bash
 python src/data/flex.py          # download, parse and store the statement
@@ -744,8 +777,8 @@ with the read-only API enabled:
 python src/data/test_live.py
 ```
 
-There is no single orchestrating entry point yet; the sequence above is run
-manually.
+`run_daily.py` covers the daily steps. Factor returns, fundamentals and the
+peer universe change slowly and are run by hand when needed.
 
 ### Safety
 
@@ -819,7 +852,7 @@ control.
 | 4d | Margin-of-safety sizing from DCF / residual income | Complete |
 | 5 | Stress tests, including the 2024 yen carry unwind | Complete |
 | 6 | Execution analysis vs. arrival price and VWAP | Complete |
-| 7 | Daily HTML report | Next |
+| 7 | Daily HTML report and single entry point | Complete |
 
 Phase 4a precedes phase 3 deliberately: factor exposure is the more
 informative diagnostic for a concentrated book, and both depend on the same

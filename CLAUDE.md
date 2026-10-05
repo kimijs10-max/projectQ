@@ -102,7 +102,8 @@ portfolio-risk/
   averages. Marketable buys within ~1 tick of mid (+2.5, −2.3 bps); commission + tax
   8.7 bps dominates. **Headline is methodological: one-minute quote bars said +18.0 bps
   arrival slippage for 8306.T; five-second bars say −2.3.**
-- [ ] **7 — Reporting & packaging:** one-page daily HTML report, README with methodology + sample output (weights only), LinkedIn write-up.
+- [~] **7 — Reporting & packaging:** one-page daily HTML report, README with methodology + sample output (weights only), LinkedIn write-up.
+  Report, README and a single entry point (`python src/run_daily.py`) done. **Still to do: the LinkedIn write-up.**
 
 ## Known traps
 - **Asynchronous closes:** Tokyo closes ~13h before New York. Same-date correlations understate US–JP co-movement → use weekly returns or lag JP prices.
@@ -118,7 +119,7 @@ portfolio-risk/
 - Live Tokyo quotes via API may need a paid subscription; delayed/historical data is fine.
 
 ## Current status
-Phases 0–6 done.
+Phases 0–6 done; Phase 7 done except the LinkedIn write-up.
 - `src/data/flex.py`: downloads the Flex Query (with a retry wrapper around
   ib_async's polling, see NOTES.md), parses positions/trades/cash
   transactions/NAV history/corporate actions/cash report into DataFrames,
@@ -236,13 +237,24 @@ Phases 0–6 done.
   IBKR keeps five-second bars ~6 months, so run `ibkr_live.py` soon after
   any trade; ib_async's logger is silenced there because Gateway messages
   include the account number. See NOTES.md.
-Phases 0–6 are complete. Next: Phase 7 (daily HTML report, packaging).
+- `src/report/build_report.py`: Phase 7. Renders
+  `reports/daily_report.html` — one self-contained page (inline CSS and
+  SVG, no JS), percent of NAV / weights / bps only, enforced by each
+  section converting to fractions of NAV before returning. A section with
+  missing inputs prints a one-line reason instead of failing the page.
+  `reports/daily_report.png` is a screenshot for the README (regenerate
+  with headless Chrome after a rebuild if the README image should match).
+- `src/run_daily.py`: the single entry point. Flex → market data →
+  reconcile → intraday bars (skipped if Gateway is down) → report.
+  Continues past a failed step, prints a summary, exits non-zero on
+  failure. Factor data, fundamentals and the peer universe are not part
+  of the daily run.
+All build phases are complete. Remaining: the LinkedIn write-up.
 
-Still missing and worth doing before the project is presentable: `tests/`
-covers only the valuation, stress and execution maths (plain asserts; pytest is not
-installed),
-and there is no single orchestrating entry point — the pipeline is a
-documented sequence of scripts run by hand.
+Still worth doing before the project is presentable: `tests/` covers only
+the valuation, stress and execution maths (plain asserts; pytest is not
+installed); and `reconcile.py` prints the account number and NAV to the
+terminal, which `run_daily.py` would carry into any scheduler log.
 
 ## Notes
 Keep a running `NOTES.md` of problems hit and how they were solved.

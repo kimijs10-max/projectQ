@@ -371,6 +371,48 @@ def proxy_betas(exposures: list[Exposure], levels: pd.DataFrame) -> dict[str, tu
     return out
 
 
+def run_scenarios(conn: sqlite3.Connection) -> dict:
+    """
+    Every scenario's headline numbers, for the daily report.
+
+    Returns {"as_of", "exposures", "replays", "shocks"}; each shock is
+    {"name", "direct", "calm", "episode", "episode_name"} in fractions of
+    NAV, with "episode" None when the scenario names no episode. Empty
+    dict when positions or scenario prices are missing.
+    """
+    exposures, as_of = current_exposures(conn)
+    levels = scenario_levels(conn)
+    if not exposures or levels.empty:
+        return {}
+    proxies = proxy_betas(exposures, levels)
+    replays = [
+        replay(name, exposures, levels, start, end, proxies)
+        for name, (start, end, _) in cfg.HISTORICAL.items()
+    ]
+    stock_series = [e.series for e in exposures if e.series and e.series in levels.columns]
+    shocks = []
+    for name, spec in cfg.HYPOTHETICAL.items():
+        factor = spec["factor"]
+        if factor not in levels.columns:
+            continue
+        betas = factor_betas(levels[stock_series], levels[factor])
+        calm = shock(exposures, spec["size"], spec["fx"], betas["beta"].to_dict())
+        episode = next((r for r in replays if r.scenario == spec.get("episode")), None)
+        stressed = None
+        if episode is not None:
+            move = float(levels[factor].asof(episode.trough) / levels[factor].asof(episode.peak) - 1)
+            stressed = shock(exposures, spec["size"], spec["fx"],
+                             episode_sensitivities(episode, move))
+        shocks.append({
+            "name": name,
+            "direct": float(calm["direct"].sum()),
+            "calm": float(calm["full"].sum()),
+            "episode": None if stressed is None else float(stressed["full"].sum()),
+            "episode_name": spec.get("episode"),
+        })
+    return {"as_of": as_of, "exposures": exposures, "replays": replays, "shocks": shocks}
+
+
 # --------------------------------------------------------------------------
 # Report.
 # --------------------------------------------------------------------------
