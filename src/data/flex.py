@@ -135,6 +135,10 @@ def get_trades(report: FlexReport) -> pd.DataFrame:
         "fx_rate_to_base": df["fxRateToBase"],
         "trade_date": df["tradeDate"].map(_to_iso_date),
         "date_time": df["dateTime"],
+        # When the order was submitted, as opposed to when it filled.
+        # Phase 6 needs it for the arrival price. Same format and time
+        # zone as dateTime.
+        "order_time": df["orderTime"] if "orderTime" in df.columns else None,
         "buy_sell": df["buySell"],
         "quantity": df["quantity"],
         "trade_price": df["tradePrice"],

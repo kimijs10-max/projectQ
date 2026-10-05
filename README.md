@@ -12,7 +12,7 @@ either can be judged.
 **Status:** data pipeline, P&L attribution, factor exposure, risk and the
 value/quality/momentum screener and intrinsic-value sizing complete, all
 validated against the broker's own NAV, plus historical and hypothetical
-stress tests. Execution analysis is next.
+stress tests and execution analysis. The daily report is next.
 
 ---
 
@@ -599,6 +599,48 @@ is mostly absent when it would matter.
 
 ---
 
+## How well were the trades executed?
+
+Every fill is measured against the bid/ask midpoint when the order was
+submitted (the arrival price), against the day's volume-weighted average
+price, and against the close. Basis points, signed so that positive is
+always a cost.
+
+**The account has three fills**, so this is a per-trade record and no
+averages are reported.
+
+| | Side | Waited | vs arrival | vs day VWAP | vs close | Commission + tax | All-in |
+|---|---|---|---|---|---|---|---|
+| 9101.T | sell | 62 min | −45.9 | +123.2 \* | −48.6 | +8.7 | −37.2 |
+| 5105.T | buy | none | +2.5 | +2.0 | −58.4 | +8.7 | +11.2 |
+| 8306.T | buy | none | −2.3 | +28.9 | −13.4 | +8.7 | +6.4 |
+
+\* VWAP from bars covering 9% of that day's volume.
+
+The two marketable buys filled within about a tick of the midpoint, so
+their cost is essentially the commission. The sell was a resting limit
+order filled an hour later at a better price than when it was placed.
+
+The checks are the more transferable part:
+
+- **Benchmark resolution.** On one-minute quote bars, one of these fills
+  showed +18.0 bps of arrival slippage. On five-second bars the same fill
+  is −2.3 bps. The quote had moved in the 48 seconds between the last
+  one-minute bar and the order, and the stale benchmark booked that move
+  as execution cost. The report uses the finest bars available and prints
+  what the coarser ones would have said.
+- **Time zones.** The broker's timestamps carry no zone. Each fill is
+  checked against the high-low range of the one-minute bar it should fall
+  in, on every run.
+- **VWAP coverage.** Bar volume is compared with the exchange's own
+  reported volume. For one of the three days the bars carry 9% of it, so
+  that VWAP is flagged as not the market's.
+- **Survivorship.** Orders that never filled are not in the statement. A
+  patient limit order can therefore only appear here as a success, and
+  one good fill says nothing about whether resting limits pay on average.
+
+---
+
 ## Architecture
 
 ```
@@ -621,6 +663,7 @@ src/
 │   ├── factor_data.py   # Fama-French factors (Kenneth French library)
 │   ├── fundamentals.py  # annual statements, stored with availability dates
 │   ├── test_flex.py     # connectivity test: positions via Flex
+│   ├── ibkr_live.py     # intraday bars around each trade (Gateway, read-only)
 │   └── test_live.py     # connectivity test: positions via IB Gateway
 ├── screener/
 │   ├── quality.py       # gross profitability, F-Score, momentum, P/B
@@ -634,7 +677,8 @@ src/
 │   ├── pnl.py           # attribution, daily returns, roll-ups
 │   ├── factors.py       # factor regressions, OLS + Newey-West
 │   ├── risk.py          # VaR, beta, correlation, concentration
-│   └── stress.py        # historical replays and hypothetical shocks
+│   ├── stress.py        # historical replays and hypothetical shocks
+│   └── tca.py           # execution vs. arrival price, VWAP and close
 ├── report/plots.py      # charts
 └── checks/reconcile.py  # NAV reconciliation
 ```
@@ -682,6 +726,15 @@ Then valuation and sizing, and the checks on its maths:
 python src/sizing/intrinsic.py       # intrinsic value, margin of safety, targets
 python tests/test_intrinsic.py       # valuation maths against closed forms
 python tests/test_stress.py          # stress maths against hand-worked paths
+python tests/test_tca.py             # execution maths and time-zone handling
+```
+
+Execution analysis needs IB Gateway running on port 4001 with the
+read-only API enabled, for the intraday bars:
+
+```bash
+python src/data/ibkr_live.py     # one-minute and five-second bars per trade
+python src/analytics/tca.py      # slippage vs. arrival, VWAP and close
 ```
 
 The live-position test additionally needs IB Gateway running on port 4001
@@ -765,8 +818,8 @@ control.
 | 4d | Cross-sectional validation (backtest reframed; see above) | Complete |
 | 4d | Margin-of-safety sizing from DCF / residual income | Complete |
 | 5 | Stress tests, including the 2024 yen carry unwind | Complete |
-| 6 | Execution analysis vs. arrival price and VWAP | Next |
-| 7 | Daily HTML report | Planned |
+| 6 | Execution analysis vs. arrival price and VWAP | Complete |
+| 7 | Daily HTML report | Next |
 
 Phase 4a precedes phase 3 deliberately: factor exposure is the more
 informative diagnostic for a concentrated book, and both depend on the same

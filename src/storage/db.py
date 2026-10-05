@@ -65,7 +65,8 @@ SCHEMA = {
             close_price REAL,
             fifo_pnl_realized REAL,
             order_type TEXT,
-            exchange TEXT
+            exchange TEXT,
+            order_time TEXT
         )
     """,
     "cash_transactions": """
@@ -203,6 +204,35 @@ SCHEMA = {
             PRIMARY KEY (date, series)
         )
     """,
+    # One-minute bars around each trade, from IB Gateway (Phase 6).
+    # bar_time is the bar's start in UTC. kind is IBKR's whatToShow:
+    # TRADES bars carry volume and the bar's own volume-weighted average;
+    # MIDPOINT bars are the bid/ask midpoint and have neither.
+    "intraday_bars": """
+        CREATE TABLE IF NOT EXISTS intraday_bars (
+            symbol TEXT NOT NULL,
+            bar_time TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            open REAL,
+            high REAL,
+            low REAL,
+            close REAL,
+            volume REAL,
+            average REAL,
+            PRIMARY KEY (symbol, bar_time, kind)
+        )
+    """,
+    # The listing exchange's own total volume on each trade date, from
+    # yfinance. Exists only to check the intraday bars against: a VWAP is
+    # only the market's VWAP if the bars behind it cover the market.
+    "exchange_volume": """
+        CREATE TABLE IF NOT EXISTS exchange_volume (
+            symbol TEXT NOT NULL,
+            date TEXT NOT NULL,
+            volume REAL,
+            PRIMARY KEY (symbol, date)
+        )
+    """,
     # Issuer classification, used to verify peer groups. Stored rather
     # than fetched on demand because the peer sets are hand-curated and
     # the whole point of the table is to let the data contradict the
@@ -240,12 +270,26 @@ SCHEMA = {
 }
 
 
+# Columns added to a table after it first shipped. CREATE TABLE IF NOT
+# EXISTS leaves an existing table untouched, so a database created before
+# the column existed would never get it; connect() adds any that are
+# missing. Append here (and to the CREATE above) rather than editing a
+# table in place.
+ADDED_COLUMNS = [
+    ("trades", "order_time", "TEXT"),
+]
+
+
 def connect(db_path: Path = DB_PATH) -> sqlite3.Connection:
     """Open (creating if needed) the SQLite DB and ensure all tables exist."""
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
     for ddl in SCHEMA.values():
         conn.execute(ddl)
+    for table, column, column_type in ADDED_COLUMNS:
+        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_type}")
     conn.commit()
     return conn
 

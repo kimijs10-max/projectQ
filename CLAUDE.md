@@ -97,7 +97,11 @@ portfolio-risk/
   **Headline: "yen +10%" is +6.3% as pure translation, +3.6% with calm-period
   betas, −16.5% with betas from the Aug 2024 unwind.** **Still outstanding:**
   the comparison with IBKR's stress report, manual for the same reason as VaR.
-- [ ] **6 — Execution analysis:** fills vs. arrival price and VWAP, slippage in bps; state small-sample caveat.
+- [x] **6 — Execution analysis:** fills vs. arrival price and VWAP, slippage in bps; state small-sample caveat.
+  Three fills only (all Tokyo limit orders, March 2026), so a per-trade record with no
+  averages. Marketable buys within ~1 tick of mid (+2.5, −2.3 bps); commission + tax
+  8.7 bps dominates. **Headline is methodological: one-minute quote bars said +18.0 bps
+  arrival slippage for 8306.T; five-second bars say −2.3.**
 - [ ] **7 — Reporting & packaging:** one-page daily HTML report, README with methodology + sample output (weights only), LinkedIn write-up.
 
 ## Known traps
@@ -114,7 +118,7 @@ portfolio-risk/
 - Live Tokyo quotes via API may need a paid subscription; delayed/historical data is fine.
 
 ## Current status
-Phases 0–5 done.
+Phases 0–6 done.
 - `src/data/flex.py`: downloads the Flex Query (with a retry wrapper around
   ib_async's polling, see NOTES.md), parses positions/trades/cash
   transactions/NAV history/corporate actions/cash report into DataFrames,
@@ -217,10 +221,25 @@ Phases 0–5 done.
   proxied share of NAV printed. Results in the Phase 5 entry above; the
   calm-vs-episode gap is the interview point (calm yen betas have
   R² ≤ 0.04; in Aug 2024 every holding fell 20–31%). See NOTES.md.
-Phases 4 and 5 are complete. Next: Phase 6 (execution analysis).
+- `config/execution.py` + `src/data/ibkr_live.py` + `src/analytics/tca.py`
+  + `tests/test_tca.py`: Phase 6. `ibkr_live.py` connects `readonly=True`
+  and only calls qualifyContracts / reqHistoricalData: one-minute TRADES
+  and MIDPOINT bars per trade date plus five-second MIDPOINT bars around
+  each order, stored in `intraday_bars`; exchange daily volume (yfinance)
+  in `exchange_volume`. `trades` now stores `order_time` (added to
+  existing databases by `db.connect()` via `ADDED_COLUMNS`). `tca.py`
+  reports slippage vs. arrival mid, interval VWAP, day VWAP and close.
+  Things to remember: Flex timestamps are US Eastern (verified by a
+  fill-inside-its-bar check on every run); TSEJ has no market-data
+  permission so bars come via SMART, and their volume is checked against
+  the exchange's (9% for 9101.T on 2026-03-03, so that VWAP is flagged);
+  IBKR keeps five-second bars ~6 months, so run `ibkr_live.py` soon after
+  any trade; ib_async's logger is silenced there because Gateway messages
+  include the account number. See NOTES.md.
+Phases 0–6 are complete. Next: Phase 7 (daily HTML report, packaging).
 
 Still missing and worth doing before the project is presentable: `tests/`
-covers only the valuation and stress maths (plain asserts; pytest is not
+covers only the valuation, stress and execution maths (plain asserts; pytest is not
 installed),
 and there is no single orchestrating entry point — the pipeline is a
 documented sequence of scripts run by hand.

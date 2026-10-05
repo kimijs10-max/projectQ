@@ -1023,11 +1023,124 @@ file and the README are as of 2026-09-30 and are now dated as such.
   same reason as the VaR one — it is not in the Flex Query.
 
 
+## Phase 6 — Execution analysis (2026-10-05)
+
+What each fill cost against the price that existed when the order went
+in, and against VWAP. `src/data/ibkr_live.py` fetches intraday bars from
+IB Gateway (read-only), `src/analytics/tca.py` does the analysis,
+settings in `config/execution.py`, maths tested in `tests/test_tca.py`.
+Basis points throughout, positive = cost.
+
+**The account has three fills.** All Tokyo, all limit orders, all March
+2026. Nothing here is a statistic, and the report prints no averages.
+
+| | side | waited | vs arrival mid | vs day VWAP | vs close | commission + tax | all-in |
+|---|---|---|---|---|---|---|---|
+| 9101.T | sell | 62 min | −45.9 | +123.2 \* | −48.6 | +8.7 | −37.2 |
+| 5105.T | buy | none | +2.5 | +2.0 | −58.4 | +8.7 | +11.2 |
+| 8306.T | buy | none | −2.3 | +28.9 | −13.4 | +8.7 | +6.4 |
+
+\* from bars covering 9% of the day's volume; see below.
+
+Reading it: the two marketable buys filled within about one tick of the
+midpoint, so their cost is essentially the commission — 8.7 bps is three
+to four times the price slippage. The sell was a resting limit order that
+the market came up to an hour later, 46 bps better than the mid when it
+was placed. The "vs close" column is mostly what the stock did after the
+fill, which is market direction, not execution; it is there because it is
+a standard benchmark, not because it measures skill.
+
+### Things hit while building it
+
+**Bar resolution changed one answer by 20 bps.** With one-minute midpoint
+bars, 8306.T's arrival slippage came out at +18.0 bps — the worst number
+in the table. The order went in at 12:57:48 and the last one-minute bar
+to close before it ended at 12:57:00; in those 48 seconds the quote rose
+about 5 yen. Against five-second bars the same fill is −2.3 bps. Nothing
+about the execution changed; the benchmark was 48 seconds stale in a
+moving market and the staleness was booked as cost. The report now uses
+the finest bars available, says which per trade, and prints what the
+coarser bars would have claimed.
+
+**Fine bars expire.** IBKR returned five-second bars for the two trades
+on 30 March and nothing for the one on 3 March. This was run six months
+and a week after the first and seven months after the second, so the
+cutoff is somewhere in between. So 9101.T's arrival price rests on one-minute bars and
+carries the same possible error that was just measured on 8306.T. Same
+lesson as the Flex 365-day window: the source forgets, so the bars are
+stored, and `ibkr_live.py` needs running within months of a trade.
+
+**Flex timestamps have no time zone.** `20260329;235552` for a trade
+dated 30 March. Read as US Eastern it is 12:55:52 in Tokyo, five minutes
+after the afternoon session opens. Rather than trust that, the report
+checks every fill against the high-low range of the one-minute bar it
+should sit in; all three do, and the check runs on every execution so a
+wrong mapping (or a daylight-saving slip — two of these trades are after
+the US clock change and one before) shows up as a fill outside its bar.
+
+**No market-data permission for the Tokyo Stock Exchange, and SMART
+quietly returned something else.** A request on the primary exchange
+(TSEJ) fails with "no market data permissions". The same request on
+SMART returns bars. For the two 30 March trades those bars carry 100%
+and 102% of the volume the exchange itself reported; for 9101.T on
+3 March they carry **9%**. The bars looked equally plausible in all
+three cases. I do not know why that day is different — most likely those
+bars are the alternative venues only — but the VWAP from them is not the
+market's VWAP, and +123 bps against it means little. Hence the coverage
+check: session bar volume against the exchange's own daily volume (from
+yfinance), printed per trade, with the VWAP columns starred when it falls
+outside 80–125%.
+
+**The closing auction is in the bar that starts at the close.** The first
+session filter was half-open (09:00 ≤ t < 15:30) and reported 57% and 72%
+coverage for the two good days. The missing volume was the 11:30 and
+15:30 auction prints, which land in the bars that *start* at those
+minutes. Sessions are inclusive at both ends now. It was the coverage
+check that caught it — written for a different problem.
+
+**The Gateway's own error log prints the account number.** ib_async logs
+every Gateway message, and one of them names an account on connect. The
+project rule is that account numbers are never printed, so
+`ibkr_live.py` silences that logger and collects request errors itself,
+stripped to symbol, code and message.
+
+That message is also the likely answer to the old open item below about
+a second linked account throwing permission errors: Gateway reports
+"positions info is not available ... until the application is finished
+and approved" — an account whose application is still pending. It does
+not affect historical-data requests.
+
+**A column added to an existing table.** `trades` needed `order_time`.
+`CREATE TABLE IF NOT EXISTS` does nothing to a table that already exists,
+so `db.connect()` now adds any column listed in `ADDED_COLUMNS` that the
+database lacks.
+
+### What this does and does not support
+
+- **Survivorship.** Only filled orders are in the Flex statement. A
+  limit order the market never returned to cost the entire move it
+  missed and appears nowhere, so the one patient order here can only
+  look good. One fill at −46 bps says nothing about whether resting
+  limits pay on average.
+- Three fills. No inference about execution quality is possible; what
+  the phase demonstrates is the method and its checks.
+- Arrival price is a midpoint from bars, not the quote at the order's
+  timestamp, so it is up to one bar (5 s or 60 s) old.
+- Day VWAP includes trading after the fill. It is a comparison, not
+  something the order could have achieved.
+- Market impact is not modelled and does not need to be at this size.
+
+
 ## Open items to revisit
 
-- Second linked account (`ACCOUNT_B`) throwing permission errors — harmless
-  for now, but figure out what it is before Phase 6 (live data) in case it
-  matters for account selection.
+- Second linked account (`ACCOUNT_B`) throwing permission errors — Phase 6
+  found the likely cause (Gateway reports an account whose application is
+  not yet approved; see the Phase 6 entry). It did not affect historical
+  data. Still confirm which account it is.
+- Run `src/data/ibkr_live.py` soon after any new trade: IBKR only keeps
+  five-second bars for about six months.
+- Find out why SMART bars for 9101.T on 2026-03-03 carry 9% of exchange
+  volume when the 30 March days carry ~100%.
 - `corporate_actions` table/parser in `flex.py` is best-effort — the query
   has returned 0 rows so far, so the column mapping is based on IBKR's
   documented schema, not verified against real data. Check it against a
