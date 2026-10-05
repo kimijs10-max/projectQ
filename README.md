@@ -10,8 +10,8 @@ against the base currency, and the two effects have to be separated before
 either can be judged.
 
 **Status:** data pipeline, P&L attribution, factor exposure, risk and the
-value/quality/momentum screener complete, all validated against the broker's
-own NAV. Stress tests are next.
+value/quality/momentum screener and intrinsic-value sizing complete, all
+validated against the broker's own NAV. Stress tests are next.
 
 ---
 
@@ -489,6 +489,59 @@ this data supports** — a conclusion kept because it is not flattering.
 
 ---
 
+## What is each holding worth?
+
+Everything above measures the book against factor definitions of value.
+The last step uses the philosophy's own yardstick: estimate what each
+holding is worth from the cash it returns to owners, and compare that with
+the price.
+
+Two models, because one does not fit a bank. Non-financials get a
+discounted cash flow on *owner cash flow* — operating cash flow less capex
+less stock-based compensation, which is non-cash but paid for by owners in
+dilution (22% of one holding's operating cash flow). The bank gets a
+residual-income model, book value plus the present value of profit above
+its cost of equity, because a bank's operating cash flow measures deposit
+and loan flows rather than earnings.
+
+A DCF on a fast grower is mostly its growth assumption, so each valuation
+is also solved backwards: what does today's price assume, and how does
+that compare with what the company has delivered?
+
+| | Held | Price assumes | Delivered | Price / base value | Target |
+|---|---|---|---|---|---|
+| 5105.T | 16.5% | cash flow shrinking 7.6%/yr | revenue +6.2%/yr | 0.63x | 18.3% |
+| 8306.T | 31.5% | permanent ROE of 15.0% | ROE 11.3% | 1.69x | 0% |
+| NVDA | 30.5% | 51% growth, fading over 10 years | revenue +100%/yr | 3.00x | 0% |
+| SHOP | 9.6% | 89% growth, fading over 10 years | revenue +27%/yr | 11.74x | 0% |
+| 4180.T | 11.9% | withheld | | | — |
+
+"Held" is each stock's share of the invested book. The target is half the
+margin of safety, nothing below a 15% margin, capped at 25% per name, with
+the remainder in cash.
+
+**One of five holdings trades below its estimated value**, and it is the
+one whose discount survives the bear case and a cost of equity up to about
+11% against the 7.5% the model uses. The rule would hold 82% cash.
+
+Two readings of that table matter more than the targets. The base case
+caps starting growth at 20%, which is what makes NVDA look like three
+times its value — but the price needs only about half the growth NVDA has
+actually produced. That multiple says more about the cap than the stock.
+SHOP is the reverse: it needs three times its delivered growth, which can
+only come from margin expansion the model does not allow for.
+
+4180.T has no value under this model rather than a value of zero: its
+owner cash flow is negative in every year available, and a company
+investing more than it generates cannot be valued from current cash flow.
+It gets no target in either direction.
+
+Assumptions — risk-free rates, equity risk premium, terminal growth, the
+scenario definitions and the sizing rule — are stated in
+`config/valuation.py`, not estimated, and printed above every result.
+
+---
+
 ## Architecture
 
 ```
@@ -518,6 +571,7 @@ src/
 │   ├── fetch_universe.py# bulk fundamentals and prices for the universe
 │   ├── composite.py     # sector-neutral percentiles and composites
 │   └── validate.py      # cross-sectional validation over two windows
+├── sizing/intrinsic.py  # DCF, residual income, margin-of-safety sizing
 ├── storage/db.py        # schema and idempotent upserts
 ├── analytics/
 │   ├── pnl.py           # attribution, daily returns, roll-ups
@@ -561,6 +615,13 @@ python src/screener/universe.py      # resolve and verify peer groups
 python src/screener/fetch_universe.py# fundamentals + prices for all 132
 python src/screener/composite.py     # sector-neutral percentiles
 python src/screener/validate.py      # cross-sectional validation
+```
+
+Then valuation and sizing, and the checks on its maths:
+
+```bash
+python src/sizing/intrinsic.py       # intrinsic value, margin of safety, targets
+python tests/test_intrinsic.py       # valuation maths against closed forms
 ```
 
 The live-position test additionally needs IB Gateway running on port 4001
@@ -642,7 +703,7 @@ control.
 | 3 | VaR, beta, correlation, concentration | Complete |
 | 4b–c | Quality/momentum screener, sector-neutral composite | Complete |
 | 4d | Cross-sectional validation (backtest reframed; see above) | Complete |
-| 4d | Margin-of-safety sizing from DCF / residual income | Planned |
+| 4d | Margin-of-safety sizing from DCF / residual income | Complete |
 | 5 | Stress tests, including the 2024 yen carry unwind | Next |
 | 6 | Execution analysis vs. arrival price and VWAP | Planned |
 | 7 | Daily HTML report | Planned |

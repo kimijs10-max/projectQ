@@ -91,7 +91,7 @@ portfolio-risk/
   equity HHI 0.243, effective N 4.1. **Still outstanding:** the cross-check against IBKR's
   own VaR report — it is not part of the Flex Query, so it remains a manual comparison.
 - [x] **4b–c — Screener + sector-neutral composite:** built; see Current status.
-- [~] **4d — Validation (backtest reframed), and sizing still to do:** add gross profitability, Piotroski F-Score, 12-1 momentum, P/B < 1 flag (TSE reform); sector-neutral composite; backtest value-only vs. value+quality vs. value+quality+momentum; margin-of-safety sizing from DCF / residual income (banks).
+- [x] **4d — Validation (backtest reframed) and margin-of-safety sizing:** add gross profitability, Piotroski F-Score, 12-1 momentum, P/B < 1 flag (TSE reform); sector-neutral composite; backtest value-only vs. value+quality vs. value+quality+momentum; margin-of-safety sizing from DCF / residual income (banks).
 - [ ] **5 — Stress tests:** spring 2025 selloff, Aug 2024 yen carry unwind, March 2020, hypothetical (yen +10%, Nasdaq −15%). Compare to IBKR's stress test report.
 - [ ] **6 — Execution analysis:** fills vs. arrival price and VWAP, slippage in bps; state small-sample caveat.
 - [ ] **7 — Reporting & packaging:** one-page daily HTML report, README with methodology + sample output (weights only), LinkedIn write-up.
@@ -187,13 +187,26 @@ Phases 0, 1, 2, 4a and 3 done.
   value-tilted, and 4d finds value is the one signal with consistency
   behind it. Caveats in NOTES.md are substantial — crude quality proxies,
   two draws from one regime, survivors only, optimistic p-values.
-Next: margin-of-safety sizing is the remaining piece of phase 4 (DCF, or
-residual income for 8306.T, which the screener already refuses to score).
-Phase 5 (stress tests) and the still-empty tests/ are the other branches.
+- `config/valuation.py` + `src/sizing/intrinsic.py` +
+  `tests/test_intrinsic.py`: Phase 4 sizing. DCF on owner cash flow
+  (operating cash flow − capex − SBC) for non-financials, residual income
+  for 8306.T, each also solved backwards for what the price assumes.
+  All assumptions (risk-free rates, ERP, terminal growth, scenarios,
+  sizing rule) are stated in the config, not estimated.
+  **Result: one of five holdings trades below base-case value** —
+  5105.T at 0.63x (37% margin of safety, holds in the bear case and up to
+  an ~11% cost of equity). 8306.T 1.69x, NVDA 3.00x, SHOP 11.74x; 4180.T
+  withheld (owner cash flow negative in 4 of 4 years). The rule would
+  hold 82% cash. Fifth method, same answer as 4a–4d. The reverse DCF is
+  the more honest read: NVDA's price needs about half its delivered
+  growth, SHOP's needs three times it. See NOTES.md for limitations
+  (hand-typed rates, constant margins).
+Phase 4 is complete. Next: Phase 5 (stress tests).
 
-Still missing and worth doing before the project is presentable: there are
-no tests in `tests/`, and no single orchestrating entry point — the
-pipeline is a documented sequence of scripts run by hand.
+Still missing and worth doing before the project is presentable: `tests/`
+covers only the valuation maths (plain asserts; pytest is not installed),
+and there is no single orchestrating entry point — the pipeline is a
+documented sequence of scripts run by hand.
 
 ## Notes
 Keep a running `NOTES.md` of problems hit and how they were solved.

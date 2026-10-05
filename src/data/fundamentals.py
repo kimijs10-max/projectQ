@@ -59,6 +59,13 @@ ITEMS = {
     ],
     "cashflow": [
         "Operating Cash Flow",
+        # Valuation inputs (src/sizing/intrinsic.py). yfinance reports
+        # capex, dividends and buybacks as negative numbers (outflows) and
+        # stock-based compensation as a positive add-back.
+        "Capital Expenditure",
+        "Stock Based Compensation",
+        "Cash Dividends Paid",
+        "Repurchase Of Capital Stock",
     ],
 }
 

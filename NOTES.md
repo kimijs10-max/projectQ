@@ -796,6 +796,117 @@ error in miniature as everything else in this log: a threshold doing one
 job while being read as if it did another.
 
 
+## Phase 4 — Intrinsic value and margin-of-safety sizing (2026-10-05)
+
+The last piece of Phase 4, and the one that tests the philosophy directly:
+put a value on each holding, compare it with the price, and ask what the
+book would look like if size followed the discount. `src/sizing/intrinsic.py`,
+assumptions in `config/valuation.py`, maths tested in `tests/test_intrinsic.py`.
+
+### Two models
+
+**DCF for non-financials**, on *owner cash flow*: operating cash flow
+− capex − stock-based compensation. SBC is added back in operating cash
+flow because it is non-cash, but owners pay for it in dilution. It is
+22% of SHOP's operating cash flow and 6% of NVDA's, so leaving it in
+would flatter exactly the names most likely to look expensive. Growth
+fades linearly over ten years to a terminal rate; the discount rate is
+CAPM in the stock's own currency with a Blume-adjusted weekly beta
+against its own market.
+
+**Residual income for 8306.T**: book value plus the present value of
+profit above the cost of equity, with ROE fading to the cost of equity.
+The reason is the same one that made the screener withhold its F-Score —
+a bank's operating cash flow (+13tn, −10tn, +0.006tn, −23tn yen across
+four years of steadily rising profit) measures deposit and loan flows,
+not earnings. The routing reuses `screener.quality.is_financial`, the
+structural test, rather than a sector label.
+
+### The reverse DCF is the headline
+
+A DCF on a fast grower is mostly its growth assumption. So every valuation
+is also solved backwards for what the price assumes, and that is set
+beside what the company has delivered:
+
+| | price assumes | delivered | price / base value |
+|---|---|---|---|
+| 5105.T | cash flow *shrinking* 7.6%/yr at the start | revenue +6.2%/yr | 0.63x |
+| 8306.T | permanent ROE of 15.0% | ROE 11.3% (cost of equity 8.4%) | 1.69x |
+| NVDA | 51% starting growth, fading over 10 yrs | revenue +100%/yr | 3.00x |
+| SHOP | 89% starting growth, fading over 10 yrs | revenue +27%/yr | 11.74x |
+| 4180.T | withheld | | |
+
+The two columns on the right disagree about NVDA, and the disagreement is
+the useful part. The base case caps starting growth at 20%, which makes
+the price look like three times value. But the price only needs about
+half of the growth NVDA has actually produced to persist and then fade.
+The 3.00x is a statement about my cap; the 51%-against-100% is a statement
+about the stock. SHOP is the opposite case: it needs more than three times
+its delivered growth, which can only come from margins expanding — and
+this model holds the margin constant (see limitations).
+
+### Results
+
+One of five holdings trades below its base-case value. 5105.T (Toyo
+Tire) at 0.63x, a 37% margin of safety that survives the bear case
+(0.68x). It also survives the discount rate: the base value stays above
+the price until the cost of equity reaches about 11.3%, against the 7.5%
+CAPM gives. The sizing rule (half the margin of safety, nothing below
+15%, capped at 25%) gives it an 18% target against the 16.5% of the
+invested book it actually is — and gives everything else zero, leaving
+82% in cash, against 62% of the invested book actually sitting in NVDA
+and 8306.T.
+
+That is a fifth method reaching the same answer as 4a–4d, and the first
+one that uses the philosophy's own yardstick rather than a factor proxy
+for it.
+
+### Things hit while building it
+
+**4180.T has no DCF value, and that is not a value of zero.** Appier's
+owner cash flow is negative in all four years available (−5.7% of
+revenue on average): capex alone exceeds operating cash flow every year.
+A DCF on a negative base returns a negative number, and no growth rate
+rescues it — the reverse solver correctly returns nothing. Reported as
+withheld with no target weight, the same rule as the F-Score for banks.
+The model is not saying Appier is worthless; it is saying a company still
+investing more than it generates cannot be valued from current cash flow.
+
+**Margin of safety is a bad display metric for anything expensive.**
+(value − price) / value divides by the value, so a stock at 11.7x its
+value shows as −1074%. Correct, and unreadable. The report now shows
+price/value for every scenario and a margin of safety only where one
+exists.
+
+**One year of cash flow is hostage to working capital.** 5105.T's
+operating cash flow went 15bn → 87bn → 67bn → 93bn yen. The cash-flow
+margin is averaged over three years and applied to the latest revenue.
+The cost is that it understates a genuinely improving business (SHOP's
+margin is 13.5% in the latest year against a 10.2% average).
+
+**Statement vintages differ.** 5105.T's balance sheet stops at 2024 while
+its cash-flow statement runs to 2025. The screener anchors everything to
+the older year for ratio consistency; here each item is read at its own
+latest date, because a share count a year old is good enough to divide
+by, and the note is printed.
+
+### What this does and does not support
+
+- The risk-free rates are typed in by hand (USD 4.25%, JPY 2.0%), not
+  fetched. Every value moves with them.
+- Margins are held constant. That is the right conservative default for a
+  tyre maker and a real blind spot for a platform business whose bull
+  case *is* margin expansion.
+- 5105.T's three-year margin window may be a cyclical high (capex fell
+  from 46bn to 27bn yen over it). The margin of safety is large enough to
+  absorb a lot of that, but the test above stresses the discount rate,
+  not the margin.
+- The DCF is a flow to equity that ignores net borrowing and gives no
+  separate credit for balance-sheet cash.
+- Blume-adjusted betas of 1.57 and 1.89 put NVDA and SHOP at 12–14% costs
+  of equity. Two years of weekly returns is a noisy basis for that.
+
+
 ## Open items to revisit
 
 - Second linked account (`ACCOUNT_B`) throwing permission errors — harmless
@@ -812,6 +923,12 @@ job while being read as if it did another.
   roadmap entry calls for it, but IBKR's VaR is not part of the Flex
   Query -- it lives in Portfolio Analyst / the risk report. Remains a
   manual comparison until a data path exists.
+- Check `config/valuation.py`'s risk-free rates against current 10-year UST
+  and JGB yields; they are stated by hand and every intrinsic value moves
+  with them.
+- The DCF holds the owner-cash-flow margin constant. A margin path
+  (current -> a stated mature margin) would let it say something about
+  SHOP and 4180.T instead of pricing one harshly and refusing the other.
 - Re-run the asynchronous-close correlation test once there is more than
   a year of history, when the weekly matrix has enough observations to
   distinguish signal from noise.
