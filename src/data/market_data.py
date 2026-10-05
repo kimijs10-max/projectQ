@@ -125,6 +125,32 @@ def get_holding_price_history(symbols: list[str], period: str = "2y") -> pd.Data
     return pd.DataFrame(rows)
 
 
+def get_scenario_history(symbols: list[str], period: str = "10y") -> pd.DataFrame:
+    """
+    Long daily history for the stress tests: every symbol in `symbols`
+    (holdings plus benchmark and factor tickers) and both FX pairs, as
+    (date, series, close). Long enough to reach March 2020.
+
+    Closes are Yahoo's adjusted closes, so a replayed return includes
+    dividends. A symbol that listed after an episode simply has no rows
+    for it; stress.py is responsible for saying so rather than treating
+    the gap as a flat price.
+    """
+    rows = []
+    for symbol in symbols:
+        closes = _download_close(symbol, period)
+        if closes.empty:
+            print(f"  warning: no scenario history found for {symbol!r}")
+            continue
+        for ts, close in closes.items():
+            rows.append({"date": ts.strftime("%Y-%m-%d"), "series": symbol, "close": close})
+
+    fx = get_fx_history(period)
+    for row in fx.itertuples(index=False):
+        rows.append({"date": row.date, "series": row.pair, "close": row.rate})
+    return pd.DataFrame(rows)
+
+
 def _held_symbols(conn) -> list[str]:
     """Every symbol seen across positions, trades, and cash_transactions."""
     from storage import db
@@ -151,12 +177,22 @@ def main() -> None:
         print(f"Fetching holding price history for {symbols}...")
         holdings = get_holding_price_history(symbols)
 
+        import scenarios
+
+        scenario_symbols = sorted(set(symbols) | set(BENCHMARK_TICKERS)
+                                  | set(scenarios.FACTOR_TICKERS))
+        print(f"Fetching 10-year scenario history for {len(scenario_symbols)} "
+              f"series plus FX...")
+        scenario = get_scenario_history(scenario_symbols)
+
         n_fx = db.upsert_df(conn, "fx_rates", fx)
         n_bench = db.upsert_df(conn, "benchmark_prices", bench)
         n_holdings = db.upsert_df(conn, "holding_prices", holdings)
+        n_scenario = db.upsert_df(conn, "scenario_prices", scenario)
         print(f"fx_rates          {n_fx:>5} rows")
         print(f"benchmark_prices  {n_bench:>5} rows")
         print(f"holding_prices    {n_holdings:>5} rows")
+        print(f"scenario_prices   {n_scenario:>5} rows")
     finally:
         conn.close()
 
@@ -166,4 +202,5 @@ if __name__ == "__main__":
     from pathlib import Path
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "config"))
     main()

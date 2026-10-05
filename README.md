@@ -11,7 +11,8 @@ either can be judged.
 
 **Status:** data pipeline, P&L attribution, factor exposure, risk and the
 value/quality/momentum screener and intrinsic-value sizing complete, all
-validated against the broker's own NAV. Stress tests are next.
+validated against the broker's own NAV, plus historical and hypothetical
+stress tests. Execution analysis is next.
 
 ---
 
@@ -516,7 +517,7 @@ that compare with what the company has delivered?
 | SHOP | 9.6% | 89% growth, fading over 10 years | revenue +27%/yr | 11.74x | 0% |
 | 4180.T | 11.9% | withheld | | | — |
 
-"Held" is each stock's share of the invested book. The target is half the
+Prices as of 2026-09-30. "Held" is each stock's share of the invested book. The target is half the
 margin of safety, nothing below a 15% margin, capped at 25% per name, with
 the remainder in cash.
 
@@ -539,6 +540,62 @@ It gets no target in either direction.
 Assumptions — risk-free rates, equity risk premium, terminal growth, the
 scenario definitions and the sizing rule — are stated in
 `config/valuation.py`, not estimated, and printed above every result.
+
+---
+
+## What would a crisis cost?
+
+VaR describes an ordinary bad day. A stress test asks what today's
+portfolio would lose in a named event, including ones worse than anything
+in the year VaR was estimated on.
+
+**Historical replay.** Today's weights carried through three past episodes
+on what each holding and each currency actually did. The loss is the worst
+peak-to-trough fall of the replayed portfolio inside each window, on the
+portfolio's own dates — Tokyo and New York did not bottom on the same day
+— and is split into stock and currency moves with the same identity used
+for daily attribution.
+
+| Episode | Peak → trough | Loss (% NAV) | Stocks | FX | Cross |
+|---|---|---|---|---|---|
+| COVID crash | 2020-02-19 → 03-16 | −27.4% | −29.9% | +3.4% | −0.9% |
+| Yen carry unwind | 2024-07-10 → 08-05 | −19.4% | −23.1% | +4.8% | −1.1% |
+| Spring 2025 selloff | 2025-02-18 → 04-07 | −21.9% | −24.2% | +3.0% | −0.6% |
+
+These are 10–14 times the one-day 95% VaR. Scaling that VaR by the square
+root of time gives about 8% for the 18 trading days of the COVID drawdown,
+against 27% replayed: the scaling assumes independent days, and a crash is
+the case where they are not.
+
+One holding listed in 2021 and did not trade during the first episode. It
+is neither dropped nor held flat: it is proxied by its beta to its local
+index, and the proxied share of NAV (10.5%) is printed with the result.
+
+**Hypothetical shocks, and why one of them has three answers.**
+
+| Shock | Direct only | + calm betas | + episode betas |
+|---|---|---|---|
+| Yen +10% | +6.3% | +3.6% | −16.5% |
+| Nasdaq −15% | 0.0% | −11.7% | −17.0% |
+
+About 63% of NAV is in yen once cash is counted, so a stronger yen is a
+translation *gain*: +6.3% if nothing else moves. Adding each stock's
+sensitivity to the yen, measured over two years of weekly returns, barely
+changes that, because in ordinary weeks the yen explains almost none of
+these stocks' moves (R² of 0.00–0.04).
+
+But the yen does not rally 10% in an ordinary week. The one time it did,
+in August 2024, carry trades were being unwound and every holding fell
+20–31% — including the US names with no yen exposure. Taking sensitivities
+from that episode turns the same shock into a 16.5% loss. An episode beta
+is a single observation, not an estimate, and is labelled as one; it is
+also the only column of the three that matches what happened.
+
+The Nasdaq shock shows the same effect from the other side. The US
+holdings' betas barely change between calm and stressed. The gap is the
+Tokyo holdings, whose sensitivity to the Nasdaq roughly doubles or triples
+in a selloff: the cross-market diversification visible in ordinary weeks
+is mostly absent when it would matter.
 
 ---
 
@@ -576,7 +633,8 @@ src/
 ├── analytics/
 │   ├── pnl.py           # attribution, daily returns, roll-ups
 │   ├── factors.py       # factor regressions, OLS + Newey-West
-│   └── risk.py          # VaR, beta, correlation, concentration
+│   ├── risk.py          # VaR, beta, correlation, concentration
+│   └── stress.py        # historical replays and hypothetical shocks
 ├── report/plots.py      # charts
 └── checks/reconcile.py  # NAV reconciliation
 ```
@@ -603,6 +661,7 @@ python src/analytics/pnl.py      # attribution and daily-return validation
 python src/data/factor_data.py   # Fama-French factor returns
 python src/analytics/factors.py  # factor regressions
 python src/analytics/risk.py     # VaR, beta, correlation, concentration
+python src/analytics/stress.py   # historical replays and hypothetical shocks
 python src/report/plots.py       # regenerate the charts above
 ```
 
@@ -622,6 +681,7 @@ Then valuation and sizing, and the checks on its maths:
 ```bash
 python src/sizing/intrinsic.py       # intrinsic value, margin of safety, targets
 python tests/test_intrinsic.py       # valuation maths against closed forms
+python tests/test_stress.py          # stress maths against hand-worked paths
 ```
 
 The live-position test additionally needs IB Gateway running on port 4001
@@ -704,8 +764,8 @@ control.
 | 4b–c | Quality/momentum screener, sector-neutral composite | Complete |
 | 4d | Cross-sectional validation (backtest reframed; see above) | Complete |
 | 4d | Margin-of-safety sizing from DCF / residual income | Complete |
-| 5 | Stress tests, including the 2024 yen carry unwind | Next |
-| 6 | Execution analysis vs. arrival price and VWAP | Planned |
+| 5 | Stress tests, including the 2024 yen carry unwind | Complete |
+| 6 | Execution analysis vs. arrival price and VWAP | Next |
 | 7 | Daily HTML report | Planned |
 
 Phase 4a precedes phase 3 deliberately: factor exposure is the more

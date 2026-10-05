@@ -907,6 +907,122 @@ by, and the note is printed.
   of equity. Two years of weekly returns is a noisy basis for that.
 
 
+## Phase 5 — Stress tests (2026-10-05)
+
+VaR describes an ordinary bad day from the last year of returns. Phase 5
+asks what today's book would lose in a named event. `src/analytics/stress.py`,
+scenarios in `config/scenarios.py`, maths tested in `tests/test_stress.py`.
+Everything is % of NAV in SGD.
+
+### Historical replay
+
+Today's weights carried through three past episodes on what each holding
+and currency actually did, split with the Phase 2 identity
+R_base = r_local + r_fx + r_local·r_fx:
+
+| | peak → trough | loss | stock | FX | cross |
+|---|---|---|---|---|---|
+| COVID crash | 2020-02-19 → 03-16 | −27.4% | −29.9% | +3.4% | −0.9% |
+| Yen carry unwind | 2024-07-10 → 08-05 | −19.4% | −23.1% | +4.8% | −1.1% |
+| Spring 2025 selloff | 2025-02-18 → 04-07 | −21.9% | −24.2% | +3.0% | −0.6% |
+
+These are 10–14 times Phase 3's one-day 95% VaR of 1.90%. The fairer
+comparison scales VaR by √time: the COVID drawdown took 18 trading days,
+and 1.90% × √18 ≈ 8.1%, against a replayed 27.4%. Square-root-of-time
+scaling of a calm year's VaR understates the episode by a factor of
+about 3.4, because it assumes the days are independent and a crash is
+exactly the case where they are not.
+
+**The yen cushioned all three.** 62.6% of NAV is in yen once cash is
+counted (52.7% stock, 9.9% cash), and the yen rose against SGD in every
+episode (+4.6%, +8.8%, +4.6%), giving back 3–5% of NAV. Three episodes
+is not a law — the yen fell alongside equities through 2022 — but it is
+the reason the losses above are smaller than the stock moves alone.
+
+### The result worth the phase: "yen +10%" has three answers
+
+| | direct only | + calm betas | + episode betas |
+|---|---|---|---|
+| Yen +10% | **+6.3%** | +3.6% | **−16.5%** |
+| Nasdaq −15% | 0.0% | −11.7% | −17.0% |
+
+*Direct* is pure translation: the yen rises, nothing else moves, and a
+book that is 63% yen gains. *Calm betas* add each stock's sensitivity to
+the yen measured over the last 104 weekly returns. *Episode betas* take
+the sensitivity from what each stock did per unit of yen move in August
+2024.
+
+The calm betas say a yen rally is mildly good for this book. Their
+R-squared is between 0.00 and 0.04: in ordinary weeks the yen explains
+essentially none of these stocks' moves, so the regression returns
+roughly nothing and the translation gain survives. In the one episode
+where the yen actually moved 10.8% in under a month, every holding fell
+20–31% — including NVDA and SHOP, which have no yen exposure at all,
+because the same deleveraging hit everything.
+
+So the sign of the answer depends on which of the three you believe,
+and the reason matters: a linear beta from calm data cannot
+represent a relationship that only exists when the move is forced. I had
+written the engine with two columns and added the third only after the
+second contradicted a replay printed twenty lines above it.
+
+The Nasdaq shock shows the same thing less dramatically. NVDA and SHOP
+barely change between calm and episode betas (1.46 → 1.40, 1.72 → 1.83).
+The whole 5-point gap is the three Tokyo names, whose betas to QQQ
+roughly double or triple (0.34–0.73 → 0.71–1.73). Diversification
+across markets is real in ordinary weeks and mostly gone in a selloff.
+
+### Design decisions and things hit
+
+**Peak and trough are the portfolio's, not an index's.** The first
+design had fixed dates per scenario. But whose? In April 2025 Tokyo
+bottomed on the 7th and New York on the 8th, and this book holds both —
+S&P dates would have measured the Tokyo half after a 6% rebound. Each
+scenario is now a generous window, and the engine reports the worst
+drawdown of the replayed portfolio inside it with the dates it found.
+The trough it found for 2025 was the 7th.
+
+**Long history lives in its own table.** The episodes need prices back
+to 2020; holding_prices, benchmark_prices and fx_rates hold two years and
+Phase 2 and 3 read them whole. Widening them would have silently changed
+every volatility, beta and correlation already reported. A separate
+`scenario_prices` table costs some duplicated public data. Checked after
+the fetch: Phase 3 still reports 17.9% annualised vol and 1.90% VaR.
+
+**A holding that did not exist is proxied, and the proxied share is
+printed.** 4180.T listed in March 2021. For the COVID replay it is
+carried as 1.10 × the TOPIX ETF (its two-year weekly beta), marked with
+an asterisk, with "10.5% of NAV proxied" under the table. Dropping it
+would have rescaled the other weights; holding it flat would have
+understated the loss. A missing series with no proxy raises rather than
+defaulting.
+
+**Cash is an exposure.** Yen cash is 9.9% of NAV, with no price risk and
+full currency risk. Cash by currency from Flex's cash report, converted
+at stored FX, sums to 1.0003 of the NAV row's own cash figure.
+
+**Refreshing prices moved Phase 4's output.** Running market_data.py for
+the long history also advanced holding_prices from 2026-09-30 to
+2026-10-05, so `intrinsic.py` now prints slightly different multiples
+(5105.T 0.64x, not 0.63x). Nothing is wrong; the Phase 4 tables in this
+file and the README are as of 2026-09-30 and are now dated as such.
+
+### What this does and does not support
+
+- An episode beta is one observation and credits the factor with the
+  entire fall in that episode. It is an order of magnitude, not an
+  estimate.
+- The hypothetical shocks move FX only as stated. The safe-haven yen
+  response that cushioned every replay is deliberately not added to the
+  Nasdaq shock, so that column is somewhat harsher than history.
+- Replays use adjusted closes (dividends included) and let weights drift
+  from the start of the window, as an unrebalanced book would.
+- No rate, credit or volatility shocks: the book is long-only cash
+  equity, so every exposure is linear and nothing needs repricing.
+- The comparison with IBKR's own stress report is still manual, for the
+  same reason as the VaR one — it is not in the Flex Query.
+
+
 ## Open items to revisit
 
 - Second linked account (`ACCOUNT_B`) throwing permission errors — harmless
@@ -919,6 +1035,8 @@ by, and the note is printed.
 - Phase 2's ~7% residual gap (see above) -- revisit if it starts to matter
   for later phases (e.g. if Phase 3's VaR/risk numbers look off, or the
   gap grows as more trades/holidays accumulate).
+- **Cross-check stress results against IBKR's own stress test report**
+  (Risk Navigator), by hand, for the same reason as the VaR item below.
 - **Cross-check risk figures against IBKR's own VaR report.** Phase 3's
   roadmap entry calls for it, but IBKR's VaR is not part of the Flex
   Query -- it lives in Portfolio Analyst / the risk report. Remains a

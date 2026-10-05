@@ -92,7 +92,11 @@ portfolio-risk/
   own VaR report — it is not part of the Flex Query, so it remains a manual comparison.
 - [x] **4b–c — Screener + sector-neutral composite:** built; see Current status.
 - [x] **4d — Validation (backtest reframed) and margin-of-safety sizing:** add gross profitability, Piotroski F-Score, 12-1 momentum, P/B < 1 flag (TSE reform); sector-neutral composite; backtest value-only vs. value+quality vs. value+quality+momentum; margin-of-safety sizing from DCF / residual income (banks).
-- [ ] **5 — Stress tests:** spring 2025 selloff, Aug 2024 yen carry unwind, March 2020, hypothetical (yen +10%, Nasdaq −15%). Compare to IBKR's stress test report.
+- [x] **5 — Stress tests:** spring 2025 selloff, Aug 2024 yen carry unwind, March 2020, hypothetical (yen +10%, Nasdaq −15%). Compare to IBKR's stress test report.
+  Replayed losses −27.4% / −19.4% / −21.9% of NAV, FX cushioning each by 3–5%.
+  **Headline: "yen +10%" is +6.3% as pure translation, +3.6% with calm-period
+  betas, −16.5% with betas from the Aug 2024 unwind.** **Still outstanding:**
+  the comparison with IBKR's stress report, manual for the same reason as VaR.
 - [ ] **6 — Execution analysis:** fills vs. arrival price and VWAP, slippage in bps; state small-sample caveat.
 - [ ] **7 — Reporting & packaging:** one-page daily HTML report, README with methodology + sample output (weights only), LinkedIn write-up.
 
@@ -110,7 +114,7 @@ portfolio-risk/
 - Live Tokyo quotes via API may need a paid subscription; delayed/historical data is fine.
 
 ## Current status
-Phases 0, 1, 2, 4a and 3 done.
+Phases 0–5 done.
 - `src/data/flex.py`: downloads the Flex Query (with a retry wrapper around
   ib_async's polling, see NOTES.md), parses positions/trades/cash
   transactions/NAV history/corporate actions/cash report into DataFrames,
@@ -201,10 +205,23 @@ Phases 0, 1, 2, 4a and 3 done.
   the more honest read: NVDA's price needs about half its delivered
   growth, SHOP's needs three times it. See NOTES.md for limitations
   (hand-typed rates, constant margins).
-Phase 4 is complete. Next: Phase 5 (stress tests).
+- `config/scenarios.py` + `src/analytics/stress.py` +
+  `tests/test_stress.py`: Phase 5. Historical replay of today's weights
+  (stocks and cash by currency) through an episode window, reporting the
+  worst drawdown on the portfolio's own peak/trough dates, split into
+  stock / FX / cross. Hypothetical shocks reported three ways: direct
+  only, with two-year weekly ("calm") betas, and with betas observed in
+  the matching episode. Long history lives in its own `scenario_prices`
+  table (fetched by market_data.py) so Phase 2/3 numbers are untouched.
+  4180.T did not trade in 2020 and is proxied by beta × 1306.T, with the
+  proxied share of NAV printed. Results in the Phase 5 entry above; the
+  calm-vs-episode gap is the interview point (calm yen betas have
+  R² ≤ 0.04; in Aug 2024 every holding fell 20–31%). See NOTES.md.
+Phases 4 and 5 are complete. Next: Phase 6 (execution analysis).
 
 Still missing and worth doing before the project is presentable: `tests/`
-covers only the valuation maths (plain asserts; pytest is not installed),
+covers only the valuation and stress maths (plain asserts; pytest is not
+installed),
 and there is no single orchestrating entry point — the pipeline is a
 documented sequence of scripts run by hand.
 

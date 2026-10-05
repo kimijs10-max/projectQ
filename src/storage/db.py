@@ -187,6 +187,22 @@ SCHEMA = {
             PRIMARY KEY (date, symbol)
         )
     """,
+    # Long price and FX history for the stress tests (Phase 5), keyed by a
+    # free-form series name: a holding's symbol, a benchmark or factor
+    # ticker (SPY, 1306.T, QQQ), or an FX pair (USDSGD, JPYSGD).
+    #
+    # Separate from holding_prices, benchmark_prices and fx_rates on
+    # purpose. Those hold two years, and Phase 2 and 3 read them whole --
+    # widening them to reach March 2020 would silently change every
+    # volatility, beta and correlation already reported.
+    "scenario_prices": """
+        CREATE TABLE IF NOT EXISTS scenario_prices (
+            date TEXT NOT NULL,
+            series TEXT NOT NULL,
+            close REAL,
+            PRIMARY KEY (date, series)
+        )
+    """,
     # Issuer classification, used to verify peer groups. Stored rather
     # than fetched on demand because the peer sets are hand-curated and
     # the whole point of the table is to let the data contradict the
