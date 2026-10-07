@@ -77,6 +77,12 @@ def fetch_meta(symbols: list[str]) -> pd.DataFrame:
             "industry": info.get("industry"),
             "quote_type": info.get("quoteType"),
             "currency": info.get("currency"),
+            # The currency the statements are reported in, which is not
+            # always the one the shares trade in: a US-listed ADR prices
+            # in dollars and reports in its home currency. Any per-share
+            # value built from the statements is only comparable with the
+            # price when the two match (see screener/candidates.py).
+            "financial_currency": info.get("financialCurrency"),
             "fetched_at": now,
         })
         if n % 20 == 0:
@@ -129,7 +135,10 @@ def main() -> None:
     conn = db.connect()
     try:
         symbols = peer_config.universe()
-        known = set(db.read_table(conn, "security_meta").get("symbol", []))
+        stored = db.read_table(conn, "security_meta")
+        # A row stored before financial_currency existed is refetched too.
+        known = set(stored.loc[stored["financial_currency"].notna(), "symbol"]) \
+            if not stored.empty else set()
         todo = [s for s in symbols if s not in known]
         if todo:
             print(f"Resolving {len(todo)} new tickers "

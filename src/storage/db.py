@@ -246,7 +246,8 @@ SCHEMA = {
             industry TEXT,
             quote_type TEXT,
             currency TEXT,
-            fetched_at TEXT
+            fetched_at TEXT,
+            financial_currency TEXT
         )
     """,
     # Annual financial-statement line items, long format.
@@ -277,6 +278,7 @@ SCHEMA = {
 # table in place.
 ADDED_COLUMNS = [
     ("trades", "order_time", "TEXT"),
+    ("security_meta", "financial_currency", "TEXT"),
 ]
 
 

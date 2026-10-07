@@ -641,6 +641,48 @@ The checks are the more transferable part:
 
 ---
 
+## Screening for candidates
+
+The valuation above is also run across the whole peer universe — 132
+names — to ask which stocks trade below their estimated value, and what
+portfolio the sizing rule would build from them.
+
+Sorting by cheapest would be wrong, so four stated rules remove names that
+are cheap for a bad reason, and every removal is listed with its rule:
+
+- **Reporting currency must match trading currency.** A US-listed ADR
+  prices in dollars and reports in its home currency; a per-share value
+  from those statements is not comparable with the price.
+- **Cash flow must have held up in the worst year on record.** This is
+  what stops a cyclical business being valued off its best years.
+- **The discount must survive the bear case.**
+- **A price below a third of estimated value is treated as a data problem
+  to check, not a bargain.**
+
+14 names pass. 97 are valued and excluded, 68 of them simply because they
+are not below value, and 21 cannot be valued. The cheapest names on paper
+— two at roughly a tenth of "value" — are among those removed. None of the
+five current holdings passes, including the one Phase 4 found below value:
+its cash flow was negative in 2022, which the three-year average hides and
+the worst-year rule does not.
+
+**Has the ranking worked?** The same screen was run as of two past dates,
+using only data available then, and compared with each stock's return over
+the following year relative to its peer group.
+
+| As of | Names | Rank correlation | p | Would-be candidates vs. peers |
+|---|---|---|---|---|
+| 2024-09-30 | 102 | +0.089 | 0.37 | −2.5% |
+| 2025-09-30 | 107 | +0.095 | 0.33 | +10.2% |
+
+Positive in both windows, small in both, and not statistically
+distinguishable from zero. Plain book-to-market scored as well or better
+on the same test. The screen therefore produces a different portfolio with
+a stated logic, and no evidence that it is a better one: its output is a
+list of names to research.
+
+---
+
 ## The daily report
 
 Everything above is recomputed each day into one page:
@@ -693,7 +735,8 @@ src/
 │   ├── universe.py      # peer-group resolution and verification
 │   ├── fetch_universe.py# bulk fundamentals and prices for the universe
 │   ├── composite.py     # sector-neutral percentiles and composites
-│   └── validate.py      # cross-sectional validation over two windows
+│   ├── validate.py      # cross-sectional validation over two windows
+│   └── candidates.py    # intrinsic-value screen, rules, suggested weights
 ├── sizing/intrinsic.py  # DCF, residual income, margin-of-safety sizing
 ├── storage/db.py        # schema and idempotent upserts
 ├── analytics/
@@ -757,9 +800,11 @@ Then valuation and sizing, and the checks on its maths:
 
 ```bash
 python src/sizing/intrinsic.py       # intrinsic value, margin of safety, targets
+python src/screener/candidates.py    # value screen across the universe
 python tests/test_intrinsic.py       # valuation maths against closed forms
 python tests/test_stress.py          # stress maths against hand-worked paths
 python tests/test_tca.py             # execution maths and time-zone handling
+python tests/test_candidates.py      # screening rules and weight caps
 ```
 
 Execution analysis needs IB Gateway running on port 4001 with the

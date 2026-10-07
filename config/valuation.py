@@ -64,3 +64,34 @@ RI_FADE_YEARS = {"bear": 5, "base": 10, "bull": 20}
 MIN_MARGIN_OF_SAFETY = 0.15
 SIZING_FRACTION = 0.50
 MAX_WEIGHT = 0.25
+
+# --------------------------------------------------------------------------
+# Screening the universe for candidates (src/screener/candidates.py).
+#
+# A mechanical valuation run over a hundred companies will call some of
+# them cheap for reasons that are not cheapness. Each rule below removes
+# one such reason, and every name it removes is listed with the rule that
+# removed it rather than silently dropped.
+# --------------------------------------------------------------------------
+
+# Fiscal years of cash-flow history required. With fewer, "normal" cash
+# flow is one or two data points.
+SCREEN_MIN_YEARS = 3
+
+# The worst year's owner-cash-flow margin must be at least this share of
+# the normalised margin the valuation uses. Guards against valuing a
+# cyclical business off its best years: container shipping earned more in
+# 2022 than in the previous decade combined.
+SCREEN_MARGIN_STABILITY = 0.50
+
+# A price below this fraction of base-case value is treated as a reason
+# to check the data, not as a bargain. Markets misprice things, but
+# rarely by a factor of three in a large listed company; a model or data
+# error is the likelier explanation.
+SCREEN_MIN_PRICE_TO_VALUE = 0.33
+
+# Most of a suggested portfolio that may sit in one peer group. A value
+# screen left alone piles into whichever sector is cheapest, which is a
+# sector bet wearing a stock-picking label (Phase 4c found exactly that
+# in the existing book).
+MAX_GROUP_WEIGHT = 0.30

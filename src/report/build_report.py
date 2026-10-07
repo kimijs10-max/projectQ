@@ -49,6 +49,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from analytics import factors, pnl, risk, stress, tca  # noqa: E402
 from checks import reconcile  # noqa: E402
+from screener import candidates  # noqa: E402
 from sizing import intrinsic  # noqa: E402
 from storage import db  # noqa: E402
 
@@ -378,6 +379,55 @@ def section_book(conn: sqlite3.Connection) -> str:
     return value_table + note + factor_html
 
 
+def section_screen(conn: sqlite3.Connection) -> str:
+    """Names the intrinsic-value screen passes, and the portfolio its rule implies."""
+    result = candidates.screen(conn)
+    if result.empty:
+        return unavailable("no verified universe; run src/screener/universe.py")
+    passed = result[result["status"] == "candidate"].sort_values("price_to_value")
+    weights = candidates.suggest_weights(passed)
+    held = candidates.current_book(conn)
+    counts = result["status"].value_counts()
+
+    rows = []
+    for r in passed.itertuples(index=False):
+        unit = "growth" if r.model == "dcf" else "ROE"
+        signed = r.model == "dcf"
+        rows.append([
+            esc(r.symbol) + (" <sup>held</sup>" if r.symbol in held else ""),
+            esc(str(r.name).title()[:26]), esc(r.group_label),
+            f"{r.price_to_value:.2f}x", f"{r.price_to_value_bear:.2f}x",
+            f"{pct(r.implied, 0, signed=signed)} {unit}", pct(r.delivered, 0, signed=signed),
+            pct(float(weights.get(r.symbol, 0.0)), 1, signed=False),
+        ])
+    rows.append(["Cash", "", "", "", "", "", "",
+                 pct(max(0.0, 1 - float(weights.sum())), 1, signed=False)])
+    out = table(["Candidate", "Name", "Peer group", "Price / value", "Bear case",
+                 "Price assumes", "Delivered", "Rule weight"], rows, numeric_from=3)
+
+    reasons = result.set_index("symbol")["reason"]
+    dropped = [f"{h} ({str(reasons.get(h, 'not in the universe')).split(':')[0]})"
+               for h in sorted(held) if h not in set(passed["symbol"])]
+    summary = (f'<p class="note">{len(result)} names screened: {counts.get("candidate", 0)} '
+               f'candidates, {counts.get("excluded", 0)} valued but excluded, '
+               f'{counts.get("withheld", 0)} with no valuation. The universe is the holdings\' '
+               f'sector peers, not the market. Current holdings that do not pass: '
+               f'{esc("; ".join(dropped) or "none")}. The screen is stricter than the holdings table '
+               f'above: it also requires cash flow that held up in the worst year on record.</p>')
+
+    check = candidates.validation(conn)
+    evidence = ""
+    if not check.empty:
+        parts = [f"as of {r.knowledge_date}, rank correlation {num(r.spearman)} "
+                 f"(p {r.p_value:.2f}, {r.n} names), would-be candidates "
+                 f"{pct(r.candidate_excess, 1)} vs. peers" for r in check.itertuples(index=False)]
+        evidence = ('<p class="note"><strong>Has the ranking worked?</strong> Valued on past data '
+                    "and tested on the following 12 months: " + "; ".join(parts) +
+                    ". Weak and not statistically distinguishable from zero — a list of names "
+                    "to research, not a portfolio shown to be better.</p>")
+    return out + summary + evidence
+
+
 def section_execution(conn: sqlite3.Connection) -> str:
     """Question 4."""
     result = tca.analyse(conn)
@@ -513,6 +563,7 @@ def build(conn: sqlite3.Connection) -> str:
 <section><h2>How much could it lose on an ordinary day?</h2>{risk_html}</section>
 <section><h2>What would a crisis cost?</h2>{stress_html}</section>
 <section><h2>What is held, and what is it worth?</h2><div class="scroll">{section_book(conn)}</div></section>
+<section><h2>What does the value screen pass?</h2><div class="scroll">{section_screen(conn)}</div></section>
 <section><h2>How well were the trades executed?</h2><div class="scroll">{section_execution(conn)}</div></section>
 <section><h2>Can these numbers be trusted today?</h2>{section_checks(conn)}</section>
 <footer>Generated {generated} from the local database. Read-only: nothing in this project places,

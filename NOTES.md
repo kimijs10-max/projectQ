@@ -1196,6 +1196,93 @@ The two series colours are the reference palette's documented slots 1 and
   a scheduler's log would capture both. Worth masking before scheduling.
 
 
+## Value screen and suggested portfolio (2026-10-06)
+
+`src/screener/candidates.py` runs the Phase 4 valuation over the whole
+verified universe (132 names), filters it, sizes what survives, and tests
+the ranking on past data. Rules in `config/valuation.py`, maths tested in
+`tests/test_candidates.py`, and a section in the daily report.
+
+### Result
+
+132 names: 14 candidates, 97 valued but excluded (68 of them simply at or
+above value), 21 with no valuation. The rule's portfolio is 14 names,
+fully invested, capped at 30% per peer group — and contains none of the
+five current holdings.
+
+**The honest headline is the test, not the list.** Valued as of a past
+date on then-available data and scored against the next 12 months'
+return relative to each peer group's median:
+
+| as of | names | rank correlation | p | would-be candidates vs. peers |
+|---|---|---|---|---|
+| 2024-09-30 | 102 | +0.089 | 0.37 | −2.5% (19 names) |
+| 2025-09-30 | 107 | +0.095 | 0.33 | +10.2% (14 names) |
+
+Positive both times, small both times, and not distinguishable from
+zero. The names that would have passed the full screen lagged their
+peers in one window and beat them in the other. Plain book-to-market in
+Phase 4d scored +0.183 and +0.091 on the same windows — a far simpler
+measure did as well or better. So this produces a *different* portfolio
+from the one held, with a defensible logic, and no evidence that it is a
+*better* one. It is a list of names to research.
+
+### Things hit while building it
+
+**ADRs: value in one currency, price in another.** The first idea was to
+value everything trading in USD or JPY. TSM trades in dollars and reports
+in Taiwan dollars, and one ADR is five ordinary shares; its "value per
+share" would have been off by a factor of the exchange rate and ranked
+at one extreme or the other. `security_meta` now stores each issuer's
+reporting currency and any name where it differs from the trading
+currency is withheld (TSM, Maersk, COSCO, Pacific Basin). Same lesson as
+the two ETF tickers in Phase 4c: a number that computes is not a number
+that means anything.
+
+**The screen contradicts Phase 4 on 5105.T, and the screen is right to.**
+Phase 4 gave Toyo Tire a 37% margin of safety and an 18% target weight.
+The screen excludes it: "cash flow unstable". Both use the same
+three-year normalised margin (9.4%), but the screen also looks at the
+worst year on record, and in 2022 operating cash flow was 15bn yen
+against 46bn of capex — owner cash flow was negative. Phase 4's notes
+already flagged that the three-year window "may be a cyclical high"; the
+screen turns that caveat into a rule. The holdings table still shows the
+Phase 4 number, and the report now says in so many words that the screen
+is the stricter of the two.
+
+**The exclusion list is the more interesting output.** The cheapest names
+on paper are almost all removed: Meiji Shipping at 0.09x and Toyoda Gosei
+at 0.11x for unstable cash flow, ZIM at 0.14x and two regional banks at
+0.15x and 0.25x as too cheap to believe. ZIM is the textbook case —
+container shipping's 2021–22 windfall is still inside the averaging
+window. Sorting by cheapest would have put exactly these at the top.
+
+**Shipping still gets through.** Four of the 14 candidates are shipping
+companies whose cash flow happened to be stable across the four years
+available — which are four unusually good years for the industry. Four
+annual statements cannot see a cycle longer than four years. The group
+cap limits the damage to 30%; it does not fix the blindness.
+
+**A structural tilt to Japan.** Eight of 14 candidates are Tokyo
+listings. A 2% risk-free rate gives a cost of equity around 7% against
+12–14% for the US growth names, and a DCF is very sensitive to that. The
+tilt is partly real (Japanese small-cap IT services do trade at low
+multiples) and partly an artefact of comparing across two rate regimes
+with one model.
+
+### What this does and does not support
+
+- The universe is the holdings' sector peers. It is not a market screen,
+  and "best of 132 hand-picked peers" is a narrow claim.
+- All the Phase 4 limitations apply to every name: hand-typed rates,
+  constant margins, no credit for balance-sheet cash.
+- The back-test uses adjusted prices as the price on the past date,
+  which slightly understates what high-dividend names cost then.
+- Two test windows from one regime, survivors only; see Phase 4d.
+- Nothing here places an order, and the weights are the output of one
+  rule, not advice.
+
+
 ## Open items to revisit
 
 - Second linked account (`ACCOUNT_B`) throwing permission errors — Phase 6

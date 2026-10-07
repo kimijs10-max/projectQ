@@ -72,6 +72,9 @@ SCENARIOS = ("bear", "base", "bull")
 # data still carries more microstructure noise than a two-year beta needs.
 BETA_FREQ = "W-FRI"
 MIN_BETA_OBS = 52
+# Weeks of returns behind a universe beta; matches the two years the
+# holdings' own tables hold.
+BETA_WEEKS = 104
 
 
 # --------------------------------------------------------------------------
@@ -257,27 +260,50 @@ def _weekly_returns(series: pd.Series) -> pd.Series:
     return series.resample(BETA_FREQ).last().pct_change()
 
 
-def local_betas(conn: sqlite3.Connection, currencies: dict[str, str]) -> dict[str, tuple[float, int]]:
+def local_betas(
+    conn: sqlite3.Connection,
+    currencies: dict[str, str],
+    price_table: str = "holding_prices",
+    knowledge_date: str | None = None,
+) -> dict[str, tuple[float, int]]:
     """
     Raw beta of each symbol to its own market's benchmark, both in local
     currency, on weekly returns. Returns {symbol: (beta, observations)}.
+
+    For the holdings this reads the two-year tables Phase 3 uses. For the
+    screening universe (`price_table="screen_prices"`) it pairs the
+    five-year screen prices with the long benchmark history in
+    scenario_prices, cut off at `knowledge_date` and limited to the last
+    BETA_WEEKS weeks before it, so a valuation as of a past date uses a
+    beta that could have been measured then.
     """
-    prices = db.read_table(conn, "holding_prices")
-    bench = db.read_table(conn, "benchmark_prices")
+    prices = db.read_table(conn, price_table)
+    if price_table == "holding_prices":
+        bench = db.read_table(conn, "benchmark_prices")
+    else:
+        bench = db.read_table(conn, "scenario_prices").rename(columns={"series": "ticker"})
     prices["date"] = pd.to_datetime(prices["date"])
     bench["date"] = pd.to_datetime(bench["date"])
+    if knowledge_date is not None:
+        prices = prices[prices["date"] <= knowledge_date]
+        bench = bench[bench["date"] <= knowledge_date]
+    by_symbol = {symbol: g.set_index("date")["close"] for symbol, g in prices.groupby("symbol")}
+    by_ticker = {ticker: g.set_index("date")["close"] for ticker, g in bench.groupby("ticker")}
 
     out: dict[str, tuple[float, int]] = {}
     for symbol, currency in currencies.items():
         ticker = cfg.BETA_BENCHMARK.get(currency)
-        p = prices[prices["symbol"] == symbol].set_index("date")["close"]
-        b = bench[bench["ticker"] == ticker].set_index("date")["close"]
+        if symbol not in by_symbol or ticker not in by_ticker:
+            continue
+        p, b = by_symbol[symbol], by_ticker[ticker]
         # Align on days both traded before resampling, so a holiday in
         # one market cannot pair this week's stock with last week's index.
         joined = pd.concat([p.rename("p"), b.rename("b")], axis=1, sort=True).dropna()
         if joined.empty:
             continue
         rets = joined.apply(_weekly_returns).dropna()
+        if price_table != "holding_prices":
+            rets = rets.tail(BETA_WEEKS)
         if len(rets) < MIN_BETA_OBS or rets["b"].var() == 0:
             continue
         beta = float(rets.cov().loc["p", "b"] / rets["b"].var())
@@ -320,6 +346,10 @@ def _value_dcf(v: Valuation, group: pd.DataFrame, shares: float) -> None:
     v.inputs = {
         "owner_cf_margin": margin,
         "latest_margin": float(years["margin"].iloc[-1]),
+        # Worst year on record and how many years there are: the screener
+        # uses these to tell a steady cash generator from a cyclical peak.
+        "margin_min": float(years["margin"].min()),
+        "margin_years": len(years),
         "revenue_cagr": revenue_cagr,
         "cagr_years": span,
         "sbc_share_of_ocf": sbc_share,
@@ -406,18 +436,36 @@ def value_holdings(conn: sqlite3.Connection, knowledge_date: str | None = None) 
     latest = positions[positions["report_date"] == positions["report_date"].max()]
     latest = latest[latest["asset_category"] == "STK"]
     currencies = dict(zip(latest["symbol"], latest["currency"]))
+    return value_symbols(conn, currencies, knowledge_date)
 
-    prices = db.read_table(conn, "holding_prices").dropna(subset=["close"])
+
+def value_symbols(
+    conn: sqlite3.Connection,
+    currencies: dict[str, str],
+    knowledge_date: str | None = None,
+    price_table: str = "holding_prices",
+) -> list[Valuation]:
+    """
+    One Valuation per symbol in `currencies` ({symbol: trading currency}),
+    as of `knowledge_date`: last price on or before it, fundamentals
+    available by it, and (for the screening universe) a beta measured on
+    returns up to it.
+    """
+    prices = db.read_table(conn, price_table).dropna(subset=["close"])
     if knowledge_date is not None:
         prices = prices[prices["date"] <= knowledge_date]
     wide = fundamentals.as_of(conn, knowledge_date, list(currencies))
-    betas = local_betas(conn, currencies)
+    if price_table == "holding_prices":
+        betas = local_betas(conn, currencies)
+    else:
+        betas = local_betas(conn, currencies, price_table, knowledge_date)
+    price_groups = {symbol: g.sort_values("date") for symbol, g in prices.groupby("symbol")}
 
     out: list[Valuation] = []
     for symbol in sorted(currencies):
         currency = currencies[symbol]
-        own = prices[prices["symbol"] == symbol].sort_values("date")
-        if own.empty:
+        own = price_groups.get(symbol)
+        if own is None or own.empty:
             continue
         v = Valuation(
             symbol=symbol,

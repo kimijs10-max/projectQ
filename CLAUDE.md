@@ -249,10 +249,26 @@ Phases 0–6 done; Phase 7 done except the LinkedIn write-up.
   Continues past a failed step, prints a summary, exits non-zero on
   failure. Factor data, fundamentals and the peer universe are not part
   of the daily run.
-All build phases are complete. Remaining: the LinkedIn write-up.
+- `src/screener/candidates.py` + `tests/test_candidates.py` (rules in
+  `config/valuation.py`): the Phase 4 valuation run across the whole
+  132-name universe via `intrinsic.value_symbols(..., price_table=
+  "screen_prices")`, four exclusion rules (reporting currency = trading
+  currency, cash flow stable in the worst year, discount survives the
+  bear case, price not below a third of value), sizing with a 30%
+  peer-group cap, and a past-date test of the ranking. `security_meta`
+  now stores `financial_currency`.
+  **Result: 14 candidates, none of them current holdings; rank
+  correlation with next-year peer-relative return +0.089 / +0.095
+  (p ≈ 0.35) — weak, and no better than plain book-to-market in 4d.**
+  A different portfolio, not a demonstrably better one. The screen
+  excludes 5105.T (negative owner cash flow in 2022) although Phase 4's
+  holdings table still shows it at 0.64x with an 18% target; the screen
+  is the stricter and more defensible of the two. See NOTES.md.
+All build phases are complete. Remaining: the LinkedIn write-up. Natural
+next step for the screen: a wider universe than sector peers.
 
 Still worth doing before the project is presentable: `tests/` covers only
-the valuation, stress and execution maths (plain asserts; pytest is not
+the valuation, stress, execution and screening maths (plain asserts; pytest is not
 installed); and `reconcile.py` prints the account number and NAV to the
 terminal, which `run_daily.py` would carry into any scheduler log.
 
