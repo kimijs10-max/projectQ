@@ -702,6 +702,50 @@ It does not show that the implied portfolio is better than the one held.
 
 ---
 
+## Stocks that fell further than their peers
+
+A contrarian screen: find stocks that have dropped much more than
+comparable companies, and check whether the business did.
+
+A stock is flagged when its price is down over six months, it sits in the
+bottom fifth of its own peer group, and it is at least 15 points behind
+that group's median — measured against peers so that a sector-wide fall
+flags nobody. For each flagged stock the latest quarter is compared with
+the same quarter a year earlier.
+
+Of 132 names, 15 are flagged. For five the results give a reason (losses,
+falling revenue, a 37% drop in profit). For five the results held up. For
+the remaining five — all smaller Tokyo listings — there is no quarterly
+data to judge by, and that is reported as unknown, never as good news.
+
+"Results held up" is deliberately not called "irrational". It means the
+obvious explanation is absent from the last reported quarter. Prices also
+move on things no income statement shows yet, and four of those five are
+US software and semiconductor companies in a year when the market has
+been repricing software on AI.
+
+**Does buying fallers work?** At each month-end over five years, the worst
+fifth of every peer group was followed against its peers.
+
+| Held | Median faller vs. peers | Mean gap vs. the rest | Fallers beating peers |
+|---|---|---|---|
+| 3 months | +1.0% | +1.7% | 51% |
+| 6 months | +0.7% | +1.1% | 49% |
+| 12 months | +0.4% | +3.0% | 48% |
+
+The typical faller does about as well as its peers and about half beat
+them. The average is a little better because a minority rebound hard: a
+lottery-ticket payoff, which argues for holding several fallers and not
+one. Even that is an upper bound — companies that fell until they were
+delisted are not in the universe, so every faller in the test survived.
+
+The screen's first run also flagged a bank as down 84%. It had split its
+shares ten for one and the stored prices were only partly adjusted. Any
+name with a one-day move over 50% in the window is now set aside and
+reported.
+
+---
+
 ## The daily report
 
 Everything above is recomputed each day into one page:
@@ -755,7 +799,8 @@ src/
 │   ├── fetch_universe.py# bulk fundamentals and prices for the universe
 │   ├── composite.py     # sector-neutral percentiles and composites
 │   ├── validate.py      # cross-sectional validation over two windows
-│   └── candidates.py    # intrinsic-value screen, rules, suggested weights
+│   ├── candidates.py    # two-stage value screen, rules, suggested weights
+│   └── fallen.py        # stocks that fell further than peers, and why
 ├── sizing/intrinsic.py  # DCF, residual income, margin-of-safety sizing
 ├── storage/db.py        # schema and idempotent upserts
 ├── analytics/
@@ -820,10 +865,12 @@ Then valuation and sizing, and the checks on its maths:
 ```bash
 python src/sizing/intrinsic.py       # intrinsic value, margin of safety, targets
 python src/screener/candidates.py    # value screen across the universe
+python src/screener/fallen.py        # fell further than peers; fetches quarterlies
 python tests/test_intrinsic.py       # valuation maths against closed forms
 python tests/test_stress.py          # stress maths against hand-worked paths
 python tests/test_tca.py             # execution maths and time-zone handling
 python tests/test_candidates.py      # screening rules and weight caps
+python tests/test_fallen.py          # fallen-stock rules and the history test
 ```
 
 Execution analysis needs IB Gateway running on port 4001 with the

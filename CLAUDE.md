@@ -270,6 +270,21 @@ Phases 0–6 done; Phase 7 done except the LinkedIn write-up.
   Phase 4's holdings table still shows it at 0.64x with an 18% target;
   the screen is the stricter of the two. Thresholds are conventions and
   PER 15 alone removes 95 names. See NOTES.md.
+- `config/reversal.py` + `src/screener/fallen.py` + `tests/test_fallen.py`:
+  contrarian screen. Flags a name that is down over six months, in the
+  bottom fifth of its own peer group and ≥15 points behind the group
+  median, then compares its latest quarter with the same quarter a year
+  earlier (stored in `quarterly_fundamentals`; only `fallen.main()`
+  fetches, the report reads). Labels are "results explain it", "results
+  held up", "no quarterly data" — never "irrational".
+  **Result: 15 of 132 flagged; 5 held up (INTU, CRUS, HUBS, ADBE, KEX),
+  5 explained, 5 Tokyo names with no quarterly data on Yahoo.**
+  History test over five years: the median faller does about as well as
+  peers and ~50% beat them; the mean is +1 to +3 points, carried by a few
+  rebounds — a coin flip with a tail, and an upper bound because delisted
+  fallers are missing. A name with a one-day move over 50% in the window
+  is set aside (an unadjusted 10:1 split made 8377.T look −84%; rerun
+  `fetch_universe.py prices` if a split is suspected). See NOTES.md.
 All build phases are complete. Remaining: the LinkedIn write-up. Natural
 next step for the screen: a wider universe than sector peers.
 

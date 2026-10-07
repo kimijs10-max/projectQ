@@ -49,7 +49,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from analytics import factors, pnl, risk, stress, tca  # noqa: E402
 from checks import reconcile  # noqa: E402
-from screener import candidates  # noqa: E402
+from screener import candidates, fallen  # noqa: E402
 from sizing import intrinsic  # noqa: E402
 from storage import db  # noqa: E402
 
@@ -440,6 +440,50 @@ def section_screen(conn: sqlite3.Connection) -> str:
     return out + summary + evidence
 
 
+def section_fallen(conn: sqlite3.Connection) -> str:
+    """Names that fell further than their peers, and what their last quarter says."""
+    result = fallen.screen(conn)
+    if result.empty:
+        return unavailable("no universe prices; run src/screener/fetch_universe.py")
+    flagged = result[result["fallen"]].copy()
+    if flagged.empty:
+        return '<p class="note">No name is down and far behind its peer group over the window.</p>'
+    order = {"unexplained": 0, "unknown": 1, "explained": 2}
+    flagged["order"] = flagged["verdict"].map(order).fillna(1)
+    flagged = flagged.sort_values(["order", "shortfall"])
+    label = {"unexplained": "Results held up", "explained": "Results explain it",
+             "unknown": "No quarterly data"}
+    wait = {True: "yes", False: "no", None: "n/a"}
+    rows = []
+    for r in flagged.itertuples(index=False):
+        rows.append([esc(r.symbol), esc(str(r.name).title()[:24]), esc(r.group_label),
+                     pct(r._1, 0), pct(r.group_median, 0), pct(r.shortfall, 0),
+                     pct(r.revenue_yoy, 0), pct(r.profit_yoy, 0),
+                     esc(label.get(r.verdict, "No quarterly data")),
+                     wait[r.can_wait]])
+    out = table(["Stock", "Name", "Peer group", "Return", "Peers", "Gap", "Revenue YoY",
+                 "Profit YoY", "Last quarter", "Can wait"], rows, numeric_from=3, text=(8, 9))
+
+    test = fallen.history(conn)
+    evidence = ""
+    if not test.empty:
+        chosen = test[test["lookback"] == fallen.cfg.LOOKBACK_MONTHS]
+        parts = [f"held {int(r.holding)} months, the median faller did {pct(r.faller_median, 1)} "
+                 f"against peers and {r.beat_peers * 100:.0f}% of fallers beat them"
+                 for r in chosen.itertuples(index=False)]
+        evidence = ('<p class="note"><strong>Has buying fallers worked?</strong> Over five years of '
+                    "month-ends in this universe: " + "; ".join(parts) + ". Roughly a coin flip "
+                    "per stock, with the average lifted by a few large rebounds — and companies "
+                    "that fell until they were delisted are missing, which flatters all of it.</p>")
+    note = (f'<p class="note">{result.attrs["since"]} to {result.attrs["as_of"]}. Flagged: price '
+            f'down, bottom {fallen.cfg.FALL_QUANTILE * 100:.0f}% of its own peer group, and at '
+            f'least {fallen.cfg.MIN_SHORTFALL * 100:.0f} points behind the group median. '
+            f'"Results held up" means the last reported quarter does not explain the fall; it '
+            f'does not mean nothing does. Can wait: equity ratio and current ratio pass the '
+            f'stage-one thresholds.</p>')
+    return out + note + evidence
+
+
 def section_execution(conn: sqlite3.Connection) -> str:
     """Question 4."""
     result = tca.analyse(conn)
@@ -576,6 +620,7 @@ def build(conn: sqlite3.Connection) -> str:
 <section><h2>What would a crisis cost?</h2>{stress_html}</section>
 <section><h2>What is held, and what is it worth?</h2><div class="scroll">{section_book(conn)}</div></section>
 <section><h2>What does the value screen pass?</h2><div class="scroll">{section_screen(conn)}</div></section>
+<section><h2>What fell further than its peers?</h2><div class="scroll">{section_fallen(conn)}</div></section>
 <section><h2>How well were the trades executed?</h2><div class="scroll">{section_execution(conn)}</div></section>
 <section><h2>Can these numbers be trusted today?</h2>{section_checks(conn)}</section>
 <footer>Generated {generated} from the local database. Read-only: nothing in this project places,

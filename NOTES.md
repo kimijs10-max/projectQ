@@ -1342,6 +1342,113 @@ names by itself, and MUFG misses by two points. Moving it to 18 or 20
 would change the list materially; nothing here says 15 is right.
 
 
+## Fallen-stock screen (2026-10-06)
+
+`src/screener/fallen.py`, settings in `config/reversal.py`, maths tested
+in `tests/test_fallen.py`. The idea: a stock that has fallen much further
+than comparable stocks, while its results have not got worse, may have
+fallen for no good reason — buy and wait.
+
+### How "fell" and "irrational" are defined
+
+**Fell:** price down over six months, bottom fifth of its own peer group,
+and at least 15 points behind the group's median. All three, each for a
+reason: the first because the bottom of a rising group is lagging, not
+falling (AVGO was up 13% against peers up 40%); the second so that a
+sector-wide fall flags nobody; the third so the bottom fifth of a flat
+group is not called a collapse.
+
+**Irrational** cannot be observed. What can is whether the last reported
+quarter explains the fall: revenue down, profit down more than 20%, or a
+loss, against the same quarter a year earlier. The labels are therefore
+"results explain it", "results held up", and "no quarterly data" — the
+last never counted as good news.
+
+### Result (2026-04-07 to 2026-10-07)
+
+15 of 132 flagged; 5 more trail by as much but are up.
+
+- **Results held up (5):** INTU (−29% against peers +38%; revenue +14%,
+  profit −5%), CRUS, HUBS, ADBE, KEX.
+- **Results explain it (5):** WIX, GT and DAN reported losses, APTV's
+  profit fell 37%, CMRE's revenue fell.
+- **No quarterly data (5):** all Tokyo listings — see below.
+
+Four of the five "held up" names are US software or semiconductors, and
+that is the caveat written out: software fell this year on the fear that
+AI replaces it, which is precisely a reason that appears in no income
+statement yet. The screen is doing what it says, and what it says is
+narrower than "irrational".
+
+### Does buying fallers work? The test, and what it does not show
+
+At each month-end over five years, the worst fifth of every peer group,
+followed against peers. For the six-month look-back:
+
+| held | median faller vs. peers | mean gap vs. the rest | fallers beating peers |
+|---|---|---|---|
+| 3 months | +1.0% | +1.7% | 51% |
+| 6 months | +0.7% | +1.1% | 49% |
+| 12 months | +0.4% | +3.0% | 48% |
+
+No look-back from one to twelve months stood out, which is why six is a
+middle choice and not an optimum. The reading is the gap between the
+columns: the *typical* faller does about as well as its peers and about
+half beat them — a coin flip — while the *average* is two or three points
+better, carried by a minority that rebound hard. That is a lottery-ticket
+payoff, not a reliable edge, and it argues for holding several fallers
+rather than one.
+
+It is also an upper bound. The universe is companies that exist today, so
+every faller in the test is one that survived. The ones that fell until
+they were delisted are exactly the ones this strategy most needs to
+count and they are not there. No p-values: the formation months overlap.
+
+And the test covers only the first half of the idea. Whether fallers
+*whose results held up* do better could not be tested — Yahoo gives five
+quarters of history, not five years.
+
+### Things hit while building it
+
+**A stock split looked like an 84% collapse.** The first run's top
+"faller" was Hokuhoku Financial: −84% against bank peers at +34%, PER of
+2. It had done a ten-for-one split on 2026-09-29 and the prices stored
+on 1 October were only partly adjusted — one day showed −90%. A refetch
+has it up ~160% over the window. The spike filter in market_data.py did
+not catch it because it looks for isolated points, and a split is a
+level shift. The screen now sets aside any name with a one-day move over
+50% in the window and says so.
+
+This also explains a line in the value screen: Hokuhoku had been
+excluded there as "discount too large to take at face value: check the
+data" at 0.15x. That rule was written as a guess that a factor-of-three
+discount is more likely an error than a bargain. It was an error. It is
+still listed that way, because the share count Yahoo reports has not
+caught up with the split.
+
+**No quarterly statements for small Tokyo listings.** Yahoo returns one
+or two quarters with no revenue row for names like Comture, against five
+full quarters for Toyota or any US name. So five of the fifteen cannot be
+judged and are reported as such. Falling back to annual figures was
+considered and rejected: an annual statement can predate the whole fall,
+and "last year was fine" would read as the fall being unexplained.
+
+**Quarterly figures get their own table.** `fundamentals` is pivoted by
+item name on the assumption every row is a year. A quarter's revenue
+under the same name would have become a "fiscal year" in every screen.
+
+### What this does and does not support
+
+- "Results held up" is the absence of the obvious explanation. Guidance,
+  litigation, a lost customer or an industry shift all move prices
+  before they reach an income statement. Each name needs its news read.
+- One quarter year-on-year is one data point, and Intuit's April quarter
+  is seasonally several times its July quarter; the same-quarter
+  comparison handles that, a sequential one would not.
+- Six months, a fifth, 15 points and 20% are conventions, not estimates.
+- The universe is sector peers of the holdings, not the market.
+
+
 ## Open items to revisit
 
 - Second linked account (`ACCOUNT_B`) throwing permission errors — Phase 6

@@ -233,6 +233,21 @@ SCHEMA = {
             PRIMARY KEY (symbol, date)
         )
     """,
+    # Quarterly income-statement items for names the fallen-stock screen
+    # flags (src/screener/fallen.py). A table of its own rather than more
+    # rows in `fundamentals`: that table is pivoted by item name on the
+    # assumption that every row is an annual figure, and a quarter's
+    # revenue under the same item name would silently become a "year".
+    "quarterly_fundamentals": """
+        CREATE TABLE IF NOT EXISTS quarterly_fundamentals (
+            symbol TEXT NOT NULL,
+            fiscal_date TEXT NOT NULL,
+            item TEXT NOT NULL,
+            value REAL,
+            fetched_at TEXT,
+            PRIMARY KEY (symbol, fiscal_date, item)
+        )
+    """,
     # Issuer classification, used to verify peer groups. Stored rather
     # than fetched on demand because the peer sets are hand-curated and
     # the whole point of the table is to let the data contradict the
