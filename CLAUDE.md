@@ -257,13 +257,19 @@ Phases 0–6 done; Phase 7 done except the LinkedIn write-up.
   bear case, price not below a third of value), sizing with a 30%
   peer-group cap, and a past-date test of the ranking. `security_meta`
   now stores `financial_currency`.
-  **Result: 14 candidates, none of them current holdings; rank
-  correlation with next-year peer-relative return +0.089 / +0.095
-  (p ≈ 0.35) — weak, and no better than plain book-to-market in 4d.**
-  A different portfolio, not a demonstrably better one. The screen
-  excludes 5105.T (negative owner cash flow in 2022) although Phase 4's
-  holdings table still shows it at 0.64x with an 18% target; the screen
-  is the stricter and more defensible of the two. See NOTES.md.
+  The screen is two-stage: **stage one is PER ≤ 15, equity ratio ≥ 40%,
+  current ratio ≥ 150%** (banks on PER only, since the balance-sheet
+  ratios do not apply), then the intrinsic-value rules.
+  **Result: 23 of 128 pass stage one, 6 pass both (GSL, 2317.T, GNTX,
+  9110.T, 3844.T, 8316.T); none is a current holding.** Past-date test,
+  median next-year return vs. peer group: stage-one passers +1.7% / +3.8%
+  against −1.5% / −3.2% for failers; value/price rank correlation only
+  +0.089 / +0.095 (p ≈ 0.35). Right direction, small, few names: a
+  research list, not a portfolio shown to be better. 5105.T passes stage
+  one but fails stage two (negative owner cash flow in 2022) although
+  Phase 4's holdings table still shows it at 0.64x with an 18% target;
+  the screen is the stricter of the two. Thresholds are conventions and
+  PER 15 alone removes 95 names. See NOTES.md.
 All build phases are complete. Remaining: the LinkedIn write-up. Natural
 next step for the screen: a wider universe than sector peers.
 

@@ -6,7 +6,16 @@ owner cash flow, residual income for banks -- over every verified name in
 the screening universe, ranks them by discount to value, and applies the
 Phase 4 sizing rule to what survives.
 
-Three things separate this from "sort by cheapest".
+**Two stages.** Stage one is three ratios read straight off the
+statements -- PER, equity ratio, current ratio -- applied before any
+valuation: is it reasonably priced on current profit, is it funded mostly
+by its owners, can it pay what falls due this year. Only names passing
+all three reach stage two, the comparison of price with intrinsic value.
+The order matters for how the result is read: a name that fails stage one
+is reported as failing stage one, even if the valuation would also have
+called it cheap.
+
+Three things separate stage two from "sort by cheapest".
 
 **A value is only compared with a price in the same currency.** A
 US-listed ADR trades in dollars and reports in its home currency; TSM's
@@ -16,7 +25,7 @@ dollar price, and would show the company as absurdly cheap or expensive
 depending on the exchange rate. Any name whose reporting currency is not
 its trading currency is withheld.
 
-**Cheap for a bad reason is filtered, and reported.** Four rules, each in
+**Cheap for a bad reason is filtered, and reported.** Four further rules, each in
 config/valuation.py with the failure it guards against: enough history, a
 discount that survives the bear case, cash flow that is not a cyclical
 peak, and a discount that is not too large to believe. A name removed by
@@ -52,7 +61,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "config"))
 
 import valuation as cfg  # noqa: E402
+from data import fundamentals  # noqa: E402
 from screener import universe, validate  # noqa: E402
+from screener.quality import is_financial  # noqa: E402
 from sizing import intrinsic  # noqa: E402
 from storage import db  # noqa: E402
 
@@ -61,13 +72,82 @@ from storage import db  # noqa: E402
 # Rules. Pure functions -- tested in tests/test_candidates.py.
 # --------------------------------------------------------------------------
 
+def first_stage_ratios(group: pd.DataFrame, price: float) -> dict:
+    """
+    PER, equity ratio and current ratio from one company's statements
+    (rows sorted by fiscal date, items as columns) and its share price.
+
+    Each ratio takes both of its inputs from the same fiscal year, the
+    latest one that reports them: yfinance's statements are not always in
+    sync, and equity from one year over assets from another is not a
+    ratio of anything. A ratio whose inputs are missing is NaN, never 0.
+    """
+    def latest(*items: str) -> pd.Series | None:
+        if any(i not in group.columns for i in items):
+            return None
+        rows = group.dropna(subset=list(items))
+        return None if rows.empty else rows.iloc[-1]
+
+    out = {"per": np.nan, "equity_ratio": np.nan, "current_ratio": np.nan,
+           "is_financial": bool(is_financial(group))}
+
+    shares_row = latest("Ordinary Shares Number")
+    if shares_row is None:
+        shares_row = latest("Share Issued")
+        shares = None if shares_row is None else float(shares_row["Share Issued"])
+    else:
+        shares = float(shares_row["Ordinary Shares Number"])
+    income = latest("Net Income")
+    if income is not None and shares and price:
+        earnings = float(income["Net Income"])
+        # A loss has no meaningful multiple; left as NaN and failed below.
+        if earnings > 0:
+            out["per"] = price * shares / earnings
+        out["has_earnings"] = earnings > 0
+
+    balance = latest("Stockholders Equity", "Total Assets")
+    if balance is not None and balance["Total Assets"]:
+        out["equity_ratio"] = float(balance["Stockholders Equity"] / balance["Total Assets"])
+    liquidity = latest("Current Assets", "Current Liabilities")
+    if liquidity is not None and liquidity["Current Liabilities"]:
+        out["current_ratio"] = float(liquidity["Current Assets"] / liquidity["Current Liabilities"])
+    return out
+
+
+def first_stage_reason(row: pd.Series | dict) -> str | None:
+    """Which stage-one ratio a name fails, or None if it passes all that apply."""
+    per = row.get("per", np.nan)
+    if pd.isna(per):
+        return ("PER: no profit in the latest year" if row.get("has_earnings") is False
+                else "PER: not computable")
+    if per > cfg.SCREEN_MAX_PER:
+        return f"PER above {cfg.SCREEN_MAX_PER:.0f}"
+    if row.get("is_financial"):
+        return None  # balance-sheet ratios do not apply to a bank
+    equity = row.get("equity_ratio", np.nan)
+    if pd.isna(equity):
+        return "equity ratio: not computable"
+    if equity < cfg.SCREEN_MIN_EQUITY_RATIO:
+        return f"equity ratio under {cfg.SCREEN_MIN_EQUITY_RATIO * 100:.0f}%"
+    current = row.get("current_ratio", np.nan)
+    if pd.isna(current):
+        return "current ratio: not computable"
+    if current < cfg.SCREEN_MIN_CURRENT_RATIO:
+        return f"current ratio under {cfg.SCREEN_MIN_CURRENT_RATIO * 100:.0f}%"
+    return None
+
+
 def exclusion_reason(row: pd.Series | dict) -> str | None:
     """
     Why a valued name is not a candidate, or None if it is one.
 
-    Rules are checked in a fixed order and the first failure is the
-    reason, so each name appears under exactly one heading.
+    Stage one (the three ratios) is checked first, then the valuation
+    rules, in a fixed order; the first failure is the reason, so each
+    name appears under exactly one heading.
     """
+    stage_one = first_stage_reason(row)
+    if stage_one is not None:
+        return stage_one
     ratio = row["price_to_value"]
     if pd.isna(ratio) or ratio >= 1:
         return "not below base-case value"
@@ -150,18 +230,39 @@ def screen(conn: sqlite3.Connection, knowledge_date: str | None = None) -> pd.Da
         knowledge_date, price_table="screen_prices",
     )
     by_symbol = {v.symbol: v for v in valuations}
+    wide = fundamentals.as_of(conn, knowledge_date, list(comparable["symbol"]))
+    statements = ({s: g.sort_values("fiscal_date") for s, g in wide.groupby("symbol")}
+                  if not wide.empty else {})
 
     rows = []
     for n in names.itertuples(index=False):
         row = {**n._asdict(), "model": None, "price": np.nan, "price_to_value": np.nan,
                "price_to_value_bear": np.nan, "margin_of_safety": np.nan,
-               "implied": np.nan, "delivered": np.nan, "status": "withheld", "reason": None}
+               "implied": np.nan, "delivered": np.nan, "per": np.nan,
+               "equity_ratio": np.nan, "current_ratio": np.nan, "is_financial": False,
+               "stage_one": False, "status": "withheld", "reason": None}
         v = by_symbol.get(n.symbol)
         if n.currency != n.financial_currency:
             reported = n.financial_currency if isinstance(n.financial_currency, str) else "unknown"
             row["reason"] = f"reports in {reported}, trades in {n.currency}"
-        elif v is None:
-            row["reason"] = "no price history"
+            rows.append(row)
+            continue
+        if v is None or n.symbol not in statements:
+            row["reason"] = "no price history" if v is None else "no fundamentals stored"
+            rows.append(row)
+            continue
+
+        # Stage one needs only a price and the statements, so it is
+        # computed for every comparable name -- including those the
+        # valuation cannot handle.
+        row["price"] = v.price
+        row.update(first_stage_ratios(statements[n.symbol], v.price))
+        stage_one = first_stage_reason(row)
+        row["stage_one"] = stage_one is None
+        if stage_one is not None:
+            row["status"], row["reason"] = "excluded", stage_one
+            if not v.withheld:
+                row["price_to_value"] = v.price_to_value("base")
         elif v.withheld:
             row["reason"] = v.withheld.split(" (")[0].split(" -- ")[0]
         else:
@@ -188,8 +289,8 @@ def validation(conn: sqlite3.Connection) -> pd.DataFrame:
     For each knowledge date in validate.KNOWLEDGE_DATES: value the
     universe as of that date, and rank-correlate value/price with the
     following year's return relative to the peer group's median. Also
-    reports how the names that would have been candidates then did
-    against everything else that was valued.
+    reports how the names that would have passed stage one, and the names
+    that would have been full candidates, did against the rest.
     """
     rows = []
     for kd in validate.KNOWLEDGE_DATES:
@@ -211,7 +312,14 @@ def validation(conn: sqlite3.Connection) -> pd.DataFrame:
         cheap = valued[valued["price_to_value"] < 1 - cfg.MIN_MARGIN_OF_SAFETY]
         rest = valued[valued["price_to_value"] >= 1 - cfg.MIN_MARGIN_OF_SAFETY]
         passed = valued[valued["status"] == "candidate"]
+        # Stage one on its own, over every name it could be computed for.
+        all_names["excess"] = all_names["forward"] - all_names["group"].map(medians)
+        judged = all_names[all_names["per"].notna() | (all_names["status"] != "withheld")]
+        stage_pass = judged[judged["stage_one"]]
+        stage_fail = judged[~judged["stage_one"]]
         rows.append({
+            "n_stage_pass": len(stage_pass), "stage_pass_excess": stage_pass["excess"].median(),
+            "n_stage_fail": len(stage_fail), "stage_fail_excess": stage_fail["excess"].median(),
             "knowledge_date": kd, "n": n, "spearman": rho, "p_value": p,
             "n_cheap": len(cheap), "cheap_excess": cheap["excess"].median(),
             "n_rest": len(rest), "rest_excess": rest["excess"].median(),
@@ -236,6 +344,10 @@ def _pct(x, width: int = 8, signed: bool = False) -> str:
     return f"{x * 100:{'+' if signed else ''}.1f}%".rjust(width)
 
 
+def _ratio(x, digits: int = 1) -> str:
+    return "--" if x is None or pd.isna(x) else f"{x:.{digits}f}"
+
+
 def _assumes(row) -> str:
     if pd.isna(row.implied):
         return "--"
@@ -257,29 +369,61 @@ def main() -> None:
         print("=" * 96)
         counts = result["status"].value_counts()
         print(f"{len(result)} names in the universe: {counts.get('candidate', 0)} candidates, "
-              f"{counts.get('excluded', 0)} valued but excluded, "
-              f"{counts.get('withheld', 0)} with no valuation.")
+              f"{counts.get('excluded', 0)} excluded, "
+              f"{counts.get('withheld', 0)} that could not be assessed.")
         print("The universe is the holdings' sector peers, not the market.\n")
+
+        print("-" * 96)
+        print("STAGE ONE -- PER, equity ratio, current ratio")
+        print("-" * 96)
+        print(f"  PER at most {cfg.SCREEN_MAX_PER:.0f}; equity ratio at least "
+              f"{cfg.SCREEN_MIN_EQUITY_RATIO * 100:.0f}%; current ratio at least "
+              f"{cfg.SCREEN_MIN_CURRENT_RATIO * 100:.0f}%.")
+        print("  Banks are judged on PER only: the balance-sheet ratios do not apply to them.\n")
+        judged = result[result["per"].notna() | result["reason"].astype(str).str.startswith("PER")]
+        remaining = len(judged)
+        print(f"  {remaining:>4}  names with comparable statements and a price")
+        for label, prefix in (("fail on PER", "PER"), ("fail on equity ratio", "equity ratio"),
+                              ("fail on current ratio", "current ratio")):
+            failed = int(judged["reason"].astype(str).str.startswith(prefix).sum())
+            remaining -= failed
+            print(f"  {-failed:>4}  {label:<24}{remaining:>4} left")
+        stage_one = result[result["stage_one"]]
+        banks = int(stage_one["is_financial"].sum())
+        print(f"\n  {len(stage_one)} pass stage one ({banks} of them banks, on PER alone).")
+        held_now = current_book(conn)
+        for symbol in sorted(held_now):
+            row = result[result["symbol"] == symbol]
+            if row.empty:
+                continue
+            r = row.iloc[0]
+            verdict = "passes" if r["stage_one"] else f"fails -- {r['reason']}"
+            print(f"     held: {symbol:<8} PER {_ratio(r['per'], 1)}  equity "
+                  f"{_pct(r['equity_ratio'], 6)}  current {_ratio(r['current_ratio'], 2)}   {verdict}")
+        print()
 
         candidates = result[result["status"] == "candidate"].sort_values("price_to_value")
         weights = suggest_weights(candidates)
         held = current_book(conn)
 
         print("-" * 96)
-        print("CANDIDATES -- below value on the base case, and passing every rule")
+        print("STAGE TWO -- CANDIDATES: pass stage one, below value, and pass every rule")
         print("-" * 96)
-        print(f"{'symbol':<9}{'name':<26}{'group':<22}{'model':<8}{'price/value':>12}"
-              f"{'bear':>7}   price assumes vs delivered")
+        print(f"{'symbol':<9}{'name':<24}{'group':<18}{'PER':>6}{'equity':>8}{'current':>9}"
+              f"{'price/value':>13}{'bear':>7}   price assumes vs delivered")
         for r in candidates.itertuples(index=False):
             mark = "  (held)" if r.symbol in held else ""
-            print(f"{r.symbol:<9}{str(r.name)[:24]:<26}{r.group_label[:20]:<22}"
-                  f"{'DCF' if r.model == 'dcf' else 'RI':<8}{r.price_to_value:>11.2f}x"
-                  f"{r.price_to_value_bear:>6.2f}x   {_assumes(r)}{mark}")
+            print(f"{r.symbol:<9}{str(r.name)[:22]:<24}{r.group_label[:16]:<18}"
+                  f"{_ratio(r.per, 1):>6}{_pct(r.equity_ratio, 8)}{_ratio(r.current_ratio, 2):>9}"
+                  f"{r.price_to_value:>12.2f}x{r.price_to_value_bear:>6.2f}x   {_assumes(r)}{mark}")
+        if candidates.empty:
+            print("  none")
 
         print("\n" + "-" * 96)
-        print("BELOW VALUE BUT EXCLUDED -- cheap on paper, removed by a rule")
+        print("PASSED STAGE ONE AND BELOW VALUE, BUT REMOVED BY A STAGE-TWO RULE")
         print("-" * 96)
-        cheap = result[(result["status"] == "excluded") & (result["price_to_value"] < 1)
+        cheap = result[(result["status"] == "excluded") & result["stage_one"]
+                       & (result["price_to_value"] < 1)
                        & (result["reason"] != "not below base-case value")]
         for reason, group in cheap.groupby("reason"):
             print(f"\n  {reason}:")
@@ -287,11 +431,21 @@ def main() -> None:
                 print(f"    {r.symbol:<9}{str(r.name)[:24]:<26}{r.group_label[:20]:<22}"
                       f"{r.price_to_value:>6.2f}x")
 
-        above = result[(result["status"] == "excluded") & (result["price_to_value"] >= 1)]
-        print(f"\n  {len(above)} more are valued at or above their price.")
+        if cheap.empty:
+            print("  none")
+        above = result[result["stage_one"] & (result["reason"] == "not below base-case value")]
+        missed = result[~result["stage_one"] & (result["status"] == "excluded")
+                        & (result["price_to_value"] < 1 - cfg.MIN_MARGIN_OF_SAFETY)]
+        print(f"\n  {len(above)} more pass stage one but are valued at or above their price.")
+        print(f"  {len(missed)} names the valuation calls at least "
+              f"{cfg.MIN_MARGIN_OF_SAFETY * 100:.0f}% cheap were stopped at stage one:")
+        for reason, group in missed.groupby(missed["reason"].str.split(":").str[0]):
+            symbols = sorted(group["symbol"])
+            print(f"     {reason:<28}{len(symbols):>2}  {', '.join(symbols[:7])}"
+                  f"{' ...' if len(symbols) > 7 else ''}")
 
         print("\n" + "-" * 96)
-        print("NO VALUATION")
+        print("COULD NOT BE ASSESSED")
         print("-" * 96)
         for reason, group in result[result["status"] == "withheld"].groupby("reason"):
             names = ", ".join(sorted(group["symbol"]))
@@ -325,19 +479,27 @@ def main() -> None:
         if check.empty:
             print("  Not enough history to test.")
         else:
-            print(f"{'as of':<12}{'names':>6}{'rank corr.':>12}{'p':>7}   "
-                  f"median return vs. peer group, next 12 months")
+            print("  median return vs. peer group over the next 12 months "
+                  "(number of names in brackets):\n")
+            print(f"  {'as of':<12}{'stage one: pass':>18}{'fail':>14}"
+                  f"{'valuation: cheap':>20}{'rest':>14}{'full candidates':>18}")
             for r in check.itertuples(index=False):
-                print(f"{r.knowledge_date:<12}{r.n:>6}{r.spearman:>+12.3f}{r.p_value:>7.2f}   "
-                      f"cheap ({r.n_cheap}) {_pct(r.cheap_excess, 7, True)}, "
-                      f"rest ({r.n_rest}) {_pct(r.rest_excess, 7, True)}, "
-                      f"would-be candidates ({r.n_candidates}) "
-                      f"{_pct(r.candidate_excess, 7, True)}")
-            print("\n  rank corr.: Spearman between value/price and the forward return relative to")
-            print("  the peer group's median. 'cheap' is everything at least "
-                  f"{cfg.MIN_MARGIN_OF_SAFETY * 100:.0f}% below value before the")
-            print("  other rules. Two overlapping-regime windows, survivors only, p-values")
-            print("  assume independent names: a demonstration, not proof (see NOTES.md, Phase 4d).")
+                def cell(value, n, width):
+                    return f"{_pct(value, 7, True)} ({n})".rjust(width)
+                print(f"  {r.knowledge_date:<12}"
+                      f"{cell(r.stage_pass_excess, r.n_stage_pass, 18)}"
+                      f"{cell(r.stage_fail_excess, r.n_stage_fail, 14)}"
+                      f"{cell(r.cheap_excess, r.n_cheap, 20)}{cell(r.rest_excess, r.n_rest, 14)}"
+                      f"{cell(r.candidate_excess, r.n_candidates, 18)}")
+            print()
+            for r in check.itertuples(index=False):
+                print(f"  {r.knowledge_date}: rank correlation of value/price with that return "
+                      f"{r.spearman:+.3f} (p {r.p_value:.2f}, {r.n} names)")
+            print("\n  'cheap' is everything at least "
+                  f"{cfg.MIN_MARGIN_OF_SAFETY * 100:.0f}% below value, before stage one or the"
+                  " other rules.")
+            print("  Two windows from one regime, survivors only: a demonstration, not proof")
+            print("  (see NOTES.md, Phase 4d).")
     finally:
         conn.close()
 

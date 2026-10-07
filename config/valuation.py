@@ -74,6 +74,24 @@ MAX_WEIGHT = 0.25
 # removed it rather than silently dropped.
 # --------------------------------------------------------------------------
 
+# Stage one: three ratios read straight off the statements, applied
+# before any valuation. They are deliberately crude -- the point is to
+# discard the expensive, the indebted and the illiquid cheaply, so that
+# the valuation's judgement calls are only spent on sound businesses.
+# Thresholds are the conventional ones; change them here.
+#
+#   PER            price / earnings per share, latest fiscal year.
+#                  A company with no profit has no PER and fails.
+#   equity ratio   shareholders' equity / total assets.
+#   current ratio  current assets / current liabilities.
+#
+# The two balance-sheet ratios do not apply to a bank (equity is ~5% of
+# assets by design and there is no current/non-current split), so a
+# financial issuer is judged on PER alone and marked as such.
+SCREEN_MAX_PER = 15.0
+SCREEN_MIN_EQUITY_RATIO = 0.40
+SCREEN_MIN_CURRENT_RATIO = 1.50
+
 # Fiscal years of cash-flow history required. With fewer, "normal" cash
 # flow is one or two data points.
 SCREEN_MIN_YEARS = 3

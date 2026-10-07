@@ -53,6 +53,9 @@ from screener import candidates  # noqa: E402
 from sizing import intrinsic  # noqa: E402
 from storage import db  # noqa: E402
 
+sys.path.insert(0, str(PROJECT_ROOT / "config"))
+import valuation as cfg_v  # noqa: E402
+
 OUTPUT = PROJECT_ROOT / "reports" / "daily_report.html"
 MINUS = "−"
 
@@ -380,7 +383,7 @@ def section_book(conn: sqlite3.Connection) -> str:
 
 
 def section_screen(conn: sqlite3.Connection) -> str:
-    """Names the intrinsic-value screen passes, and the portfolio its rule implies."""
+    """Names passing both stages of the screen, and the portfolio its rule implies."""
     result = candidates.screen(conn)
     if result.empty:
         return unavailable("no verified universe; run src/screener/universe.py")
@@ -396,35 +399,44 @@ def section_screen(conn: sqlite3.Connection) -> str:
         rows.append([
             esc(r.symbol) + (" <sup>held</sup>" if r.symbol in held else ""),
             esc(str(r.name).title()[:26]), esc(r.group_label),
-            f"{r.price_to_value:.2f}x", f"{r.price_to_value_bear:.2f}x",
-            f"{pct(r.implied, 0, signed=signed)} {unit}", pct(r.delivered, 0, signed=signed),
+            num(r.per, 1), pct(r.equity_ratio, 0, signed=False),
+            "n/a" if _missing(r.current_ratio) else f"{r.current_ratio:.2f}",
+            f"{r.price_to_value:.2f}x",
+            f"{pct(r.implied, 0, signed=signed)} {unit}",
             pct(float(weights.get(r.symbol, 0.0)), 1, signed=False),
         ])
-    rows.append(["Cash", "", "", "", "", "", "",
+    rows.append(["Cash", "", "", "", "", "", "", "",
                  pct(max(0.0, 1 - float(weights.sum())), 1, signed=False)])
-    out = table(["Candidate", "Name", "Peer group", "Price / value", "Bear case",
-                 "Price assumes", "Delivered", "Rule weight"], rows, numeric_from=3)
+    out = table(["Candidate", "Name", "Peer group", "PER", "Equity ratio", "Current ratio",
+                 "Price / value", "Price assumes", "Rule weight"],
+                rows, numeric_from=3)
+    n_stage = int(result["stage_one"].sum())
 
     reasons = result.set_index("symbol")["reason"]
-    dropped = [f"{h} ({str(reasons.get(h, 'not in the universe')).split(':')[0]})"
+    dropped = [f"{h} ({str(reasons.get(h, 'not in the universe')).split(': check')[0]})"
                for h in sorted(held) if h not in set(passed["symbol"])]
-    summary = (f'<p class="note">{len(result)} names screened: {counts.get("candidate", 0)} '
-               f'candidates, {counts.get("excluded", 0)} valued but excluded, '
-               f'{counts.get("withheld", 0)} with no valuation. The universe is the holdings\' '
+    summary = (f'<p class="note">Stage one: PER at most {cfg_v.SCREEN_MAX_PER:.0f}, equity ratio '
+               f'at least {cfg_v.SCREEN_MIN_EQUITY_RATIO * 100:.0f}%, current ratio at least '
+               f'{cfg_v.SCREEN_MIN_CURRENT_RATIO * 100:.0f}% (banks on PER only). Stage two: below '
+               f'intrinsic value and passing the stability rules. {len(result)} names screened, '
+               f'{n_stage} pass stage one, {counts.get("candidate", 0)} pass both; '
+               f'{counts.get("withheld", 0)} could not be assessed. The universe is the holdings\' '
                f'sector peers, not the market. Current holdings that do not pass: '
-               f'{esc("; ".join(dropped) or "none")}. The screen is stricter than the holdings table '
-               f'above: it also requires cash flow that held up in the worst year on record.</p>')
+               f'{esc("; ".join(dropped) or "none")}. </p>')
 
     check = candidates.validation(conn)
     evidence = ""
     if not check.empty:
-        parts = [f"as of {r.knowledge_date}, rank correlation {num(r.spearman)} "
-                 f"(p {r.p_value:.2f}, {r.n} names), would-be candidates "
-                 f"{pct(r.candidate_excess, 1)} vs. peers" for r in check.itertuples(index=False)]
-        evidence = ('<p class="note"><strong>Has the ranking worked?</strong> Valued on past data '
-                    "and tested on the following 12 months: " + "; ".join(parts) +
-                    ". Weak and not statistically distinguishable from zero — a list of names "
-                    "to research, not a portfolio shown to be better.</p>")
+        parts = [f"as of {r.knowledge_date}, stage-one passers {pct(r.stage_pass_excess, 1)} "
+                 f"({r.n_stage_pass}) against {pct(r.stage_fail_excess, 1)} for the rest; names "
+                 f"passing both stages {pct(r.candidate_excess, 1)} ({r.n_candidates}); "
+                 f"value/price rank correlation {num(r.spearman)} (p {r.p_value:.2f})"
+                 for r in check.itertuples(index=False)]
+        evidence = ('<p class="note"><strong>Has it worked?</strong> Run on past data and tested '
+                    "on the following 12 months, median return relative to peer group: "
+                    + "; ".join(parts) +
+                    ". Right direction in both windows, small, and resting on few names — a "
+                    "list to research, not a portfolio shown to be better.</p>")
     return out + summary + evidence
 
 

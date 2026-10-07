@@ -643,43 +643,62 @@ The checks are the more transferable part:
 
 ## Screening for candidates
 
-The valuation above is also run across the whole peer universe — 132
-names — to ask which stocks trade below their estimated value, and what
-portfolio the sizing rule would build from them.
+The same question is asked across the whole peer universe — 132 names —
+in two stages, and the sizing rule is applied to what survives.
 
-Sorting by cheapest would be wrong, so four stated rules remove names that
-are cheap for a bad reason, and every removal is listed with its rule:
+**Stage one: three ratios read straight off the statements.**
+
+| Test | Threshold | Asks |
+|---|---|---|
+| PER (price ÷ earnings per share) | at most 15 | Is it reasonably priced on current profit? |
+| Equity ratio (equity ÷ total assets) | at least 40% | Is it funded mostly by its owners? |
+| Current ratio (current assets ÷ current liabilities) | at least 150% | Can it pay what falls due this year? |
+
+A company with no profit has no PER and fails. The two balance-sheet tests
+do not apply to a bank — equity is about 5% of assets by design and there
+is no current/non-current split — so banks are judged on PER alone and
+marked as such, not failed on tests that cannot measure them.
+
+Of 128 names with comparable statements, 95 fail on PER, 7 more on equity
+ratio and 3 more on current ratio. **23 pass**, one of them a current
+holding.
+
+**Stage two: price against intrinsic value**, with four rules that remove
+names that are cheap for a bad reason, each removal listed with its rule:
 
 - **Reporting currency must match trading currency.** A US-listed ADR
   prices in dollars and reports in its home currency; a per-share value
   from those statements is not comparable with the price.
-- **Cash flow must have held up in the worst year on record.** This is
-  what stops a cyclical business being valued off its best years.
+- **Cash flow must have held up in the worst year on record**, which stops
+  a cyclical business being valued off its best years.
 - **The discount must survive the bear case.**
 - **A price below a third of estimated value is treated as a data problem
   to check, not a bargain.**
 
-14 names pass. 97 are valued and excluded, 68 of them simply because they
-are not below value, and 21 cannot be valued. The cheapest names on paper
-— two at roughly a tenth of "value" — are among those removed. None of the
-five current holdings passes, including the one Phase 4 found below value:
-its cash flow was negative in 2022, which the three-year average hides and
+**6 names pass both stages**, none of them a current holding. Four
+holdings stop at PER. The fifth passes stage one and is below value, but
+its cash flow was negative in 2022, which a three-year average hides and
 the worst-year rule does not.
 
-**Has the ranking worked?** The same screen was run as of two past dates,
-using only data available then, and compared with each stock's return over
-the following year relative to its peer group.
+The two stages disagree usefully. Nineteen names the valuation calls at
+least 15% cheap never reach it: thirteen on PER, five on equity ratio, one
+on current ratio. A DCF
+on owner cash flow can call a leveraged company cheap; the equity ratio is
+what says it is leveraged.
 
-| As of | Names | Rank correlation | p | Would-be candidates vs. peers |
+**Has it worked?** Both stages were run as of two past dates, using only
+data available then, and compared with each stock's return over the
+following year relative to its peer group's median.
+
+| As of | Pass stage one | Fail stage one | Pass both stages | Value/price rank correlation |
 |---|---|---|---|---|
-| 2024-09-30 | 102 | +0.089 | 0.37 | −2.5% |
-| 2025-09-30 | 107 | +0.095 | 0.33 | +10.2% |
+| 2024-09-30 | +1.7% (41) | −1.5% (87) | +1.6% (17) | +0.089 (p 0.37) |
+| 2025-09-30 | +3.8% (34) | −3.2% (94) | +9.2% (8) | +0.095 (p 0.33) |
 
-Positive in both windows, small in both, and not statistically
-distinguishable from zero. Plain book-to-market scored as well or better
-on the same test. The screen therefore produces a different portfolio with
-a stated logic, and no evidence that it is a better one: its output is a
-list of names to research.
+The direction is right in both windows and the size is small. Two windows
+from one market regime, survivors only, and the final set rests on 17 and
+8 names. This supports treating the output as a list of names to research.
+It does not show that the implied portfolio is better than the one held.
 
 ---
 

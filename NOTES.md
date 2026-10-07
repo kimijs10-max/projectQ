@@ -1282,6 +1282,65 @@ with one model.
 - Nothing here places an order, and the weights are the output of one
   rule, not advice.
 
+### Addendum (2026-10-06): a first stage on PER, equity ratio and current ratio
+
+The screen is now two stages. Stage one is three ratios applied before
+any valuation — PER ≤ 15, equity ratio ≥ 40%, current ratio ≥ 150%,
+conventional thresholds held in `config/valuation.py` — and only names
+passing all three go on to the intrinsic-value comparison.
+
+128 names with comparable statements → 95 fail PER → 7 fail equity ratio
+→ 3 fail current ratio → **23 pass stage one → 6 pass both stages**
+(GSL, 2317.T, GNTX, 9110.T, 3844.T, 8316.T). The rule's portfolio is
+those six with 7% left in cash. The 14-name list above is superseded.
+
+Of the holdings only 5105.T passes stage one (PER 9.4, equity 65%,
+current 2.48); it then fails stage two on unstable cash flow. 8306.T
+misses on PER at 17.2; NVDA, SHOP and 4180.T are at 47, 159 and 56.
+
+**Banks and the ratios that do not apply.** A bank's equity ratio is
+about 5% and it reports no current assets or liabilities. Applied
+literally, stage one would fail every bank on a test that cannot measure
+one — the same mistake as part-scoring the F-Score in Phase 4b. Financial
+issuers (by `quality.is_financial`, the structural test) are judged on
+PER alone and the output says how many passers are banks: 5 of 23.
+
+**A missing ratio is not a pass, and a loss is not a low PER.** A
+negative PER would sort as the cheapest thing in the universe. Loss-makers
+get no PER and fail explicitly ("no profit in the latest year"); a ratio
+whose inputs are absent fails as "not computable".
+
+**One fiscal year per ratio.** 5105.T's income statement runs a year
+past its balance sheet. Each ratio takes both inputs from the latest
+year that reports both, so equity is never divided by another year's
+assets. There is a test for exactly that shape of data.
+
+**The two stages catch different things.** 19 names the valuation calls
+at least 15% cheap are stopped at stage one: thirteen on PER, five on
+equity ratio (ADBE, GDDY, LEA, ZIM, 9115.T), one on current ratio. The equity
+ratio ones are the instructive group — owner cash flow to equity can look
+excellent *because* of leverage, and the DCF here gives no penalty for
+debt. Two of the first list's larger weights, GDDY and LEA, were this.
+
+**Evidence, stage by stage.** Median next-12-month return relative to
+peer group:
+
+| as of | pass stage one | fail stage one | pass both |
+|---|---|---|---|
+| 2024-09-30 | +1.7% (41) | −1.5% (87) | +1.6% (17) |
+| 2025-09-30 | +3.8% (34) | −3.2% (94) | +9.2% (8) |
+
+Stage-one passers beat failers in both windows by 3 and 7 points. That
+is consistent with Phase 4d, where simple value measures were the only
+signal to hold its sign, and it is more than the valuation ranking
+managed on its own. It is still two windows from one regime, and the
+"pass both" column rests on 17 and 8 names. Not tested for significance,
+because with two draws the honest statement is the size and the count.
+
+**Thresholds are conventions, not estimates.** PER 15 removes 95 of 128
+names by itself, and MUFG misses by two points. Moving it to 18 or 20
+would change the list materially; nothing here says 15 is right.
+
 
 ## Open items to revisit
 
