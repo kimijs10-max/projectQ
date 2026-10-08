@@ -113,3 +113,50 @@ SCREEN_MIN_PRICE_TO_VALUE = 0.33
 # sector bet wearing a stock-picking label (Phase 4c found exactly that
 # in the existing book).
 MAX_GROUP_WEIGHT = 0.30
+
+# --------------------------------------------------------------------------
+# Your own forecasts (src/sizing/intrinsic.py, "your thesis").
+#
+# Firm-foundation value includes growth: a stock is worth the present
+# value of the cash it will produce, and for a growing company most of
+# that cash is in the future. The base case above deliberately assumes
+# growth slows sharply, which is a statement about caution, not about any
+# particular company. The question that matters for a growth holding is
+# the one only its owner can answer: how fast do *you* expect it to grow,
+# and is the price below the value that forecast gives?
+#
+# Enter a forecast per symbol and the engine values the stock under it,
+# next to what the price assumes. Leave a symbol out and it gets none --
+# nothing is filled in on your behalf.
+#
+#   growth      starting growth in revenue, fading linearly to the
+#               currency's terminal rate over HORIZON_YEARS (DCF names)
+#   margin      owner-cash-flow margin reached by the end of the horizon,
+#               moving linearly from today's; omit to hold today's margin
+#   roe         return on equity the bank starts from (residual income)
+#   fade_years  years over which that ROE fades to the cost of equity
+#
+# Example (delete the leading #, change the numbers to your own view):
+#   "NVDA":   {"growth": 0.35},
+#   "SHOP":   {"growth": 0.25, "margin": 0.20},
+#   "4180.T": {"growth": 0.25, "margin": 0.10},
+#   "8306.T": {"roe": 0.13, "fade_years": 15},
+THESIS = {
+}
+
+# Rungs for the "what you would have to believe" ladder: price / value is
+# shown at each. They are a grid, not forecasts.
+GROWTH_LADDER = (0.05, 0.10, 0.20, 0.30, 0.40, 0.50)
+ROE_LADDER = (0.08, 0.10, 0.12, 0.14, 0.16)
+# Fade lengths shown for a bank. How long excess returns last matters as
+# much as how high they start, and ten years is the cautious end.
+FADE_LADDER = (10, 20, 40)
+
+# Extra ladder rows for names whose case rests on margins rising: the
+# owner-cash-flow margin reached at the end of the horizon. Also a grid,
+# not a forecast -- it exists because holding today's margin constant
+# prices one of these harshly and cannot value the other at all.
+MARGIN_LADDER = {
+    "SHOP": (0.15, 0.20, 0.25),
+    "4180.T": (0.05, 0.10, 0.15),
+}

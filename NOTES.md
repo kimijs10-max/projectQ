@@ -1449,6 +1449,72 @@ under the same name would have become a "fiscal year" in every screen.
 - The universe is sector peers of the holdings, not the market.
 
 
+## Correction: value as a factor is not firm-foundation value (2026-10-07)
+
+Several entries above say, or lean on, something that is wrong: that
+finding the book "not value-tilted" cuts against the philosophy behind
+it, and that the Phase 4 DCF was "a fifth method reaching the same
+answer". They are left as written — this file is a log — and corrected
+here.
+
+**The mistake.** Four of the methods (the HML regression, price-to-book,
+the sector-neutral ranking, the cross-sectional test) measure cheapness
+against today's book and earnings. Firm-foundation theory values the
+cash a company will produce in future, and for a growing company most of
+that is growth. A stock can be expensive on book and below its intrinsic
+value at once. So "no positive HML loading" describes the book — it is
+growth-oriented — and says nothing about whether the philosophy is being
+followed. The Phase 4a entry had the distinction right ("different
+constructs") and later entries lost it.
+
+**The DCF is not a fifth vote.** It asks a different question from the
+other four: not "is this cheap?" but "how much growth is the price
+charging for?" And its base case cannot answer that for a growth
+holding, because it caps starting growth at 20% whatever the company has
+done. NVDA at "3.00x value" was a statement about the cap.
+
+**What replaces it.** `intrinsic.py` now prints a ladder — price ÷ value
+across a grid of starting growth rates, with the rate at which price
+equals value — and takes the owner's own forecast per holding from
+`THESIS` in `config/valuation.py`. Nothing is filled in by default: the
+growth forecast is the one input that has to come from the person whose
+money it is.
+
+It also lets the margin move. `dcf_value_path()` takes a margin at the
+end of the horizon as well as today's, which closes the open item below
+and does two things the constant-margin model could not: price a company
+whose case is margin expansion, and value one whose owner cash flow is
+negative today.
+
+| | delivered | fair at |
+|---|---|---|
+| NVDA, margin stays 41% | 100% | 53% starting growth |
+| SHOP, margin stays 10% | 27% | 92% |
+| SHOP, margin reaches 25% | 27% | 65% |
+| 4180.T, margin reaches 10% | 31% | 25% |
+| 4180.T, margin reaches 5% | 31% | 45% |
+| 5105.T, margin stays 9% | 6% | −7% |
+| 8306.T, ROE fading over 10 / 20 / 40 years | 11% ROE | 28% / 19% / 15% ROE |
+
+**What survives the correction.** The ladder does not make everything
+look fine. NVDA needs about half what it has delivered, which is a
+defensible thing to believe. SHOP needs more than double its delivered
+growth even with its margin rising two and a half times. 8306.T needs
+either an ROE well above the 11% it earns or excess returns that last
+decades; the ten-year fade in the base case is the cautious end, and the
+ladder shows how much rides on that choice. 4180.T, withheld before, is
+fair at growth below what it has delivered if its margin reaches 10% —
+and has no value at any growth rate if the margin never turns positive.
+
+The concentration and crisis-loss results never depended on any of this.
+
+**How it happened.** Each phase ended on "same answer as the last one",
+and the phrase carried a claim one step further each time: from "not
+HML" to "not value" to "not the philosophy". The first is a measurement,
+the last is an inference that was never tested. It was the owner of the
+portfolio who pointed out that growth is part of firm-foundation value.
+
+
 ## Open items to revisit
 
 - Second linked account (`ACCOUNT_B`) throwing permission errors — Phase 6
@@ -1475,9 +1541,9 @@ under the same name would have become a "fiscal year" in every screen.
 - Check `config/valuation.py`'s risk-free rates against current 10-year UST
   and JGB yields; they are stated by hand and every intrinsic value moves
   with them.
-- The DCF holds the owner-cash-flow margin constant. A margin path
-  (current -> a stated mature margin) would let it say something about
-  SHOP and 4180.T instead of pricing one harshly and refusing the other.
+- Enter a growth forecast per holding under `THESIS` in
+  `config/valuation.py`. Until then the thesis section is empty and only
+  the ladder speaks.
 - Re-run the asynchronous-close correlation test once there is more than
   a year of history, when the weekly matrix has enough observations to
   distinguish signal from noise.

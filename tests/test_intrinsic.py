@@ -84,6 +84,77 @@ def test_target_weight_rule():
     assert intrinsic.target_weight(0.99) == cfg.MAX_WEIGHT
 
 
+def test_margin_path_with_constant_margin_is_the_plain_dcf():
+    plain, share = intrinsic.dcf_value(0.25 * 1000.0, 0.30, 0.02, 0.10)
+    path, path_share = intrinsic.dcf_value_path(1000.0, 0.30, 0.02, 0.10, 0.25, 0.25)
+    assert math.isclose(path, plain, rel_tol=1e-12)
+    assert math.isclose(path_share, share, rel_tol=1e-12)
+
+
+def test_rising_margin_is_worth_more_than_a_flat_one():
+    flat, _ = intrinsic.dcf_value_path(1000.0, 0.20, 0.02, 0.10, 0.10, 0.10)
+    rising, _ = intrinsic.dcf_value_path(1000.0, 0.20, 0.02, 0.10, 0.10, 0.20)
+    assert rising > flat
+
+
+def test_loss_maker_has_value_once_margin_turns_positive():
+    # Starts at -6% of revenue and reaches +10%: early flows are negative
+    # and discounted as such, but the total is positive.
+    value, _ = intrinsic.dcf_value_path(1000.0, 0.25, 0.01, 0.07, -0.06, 0.10)
+    assert value > 0
+    never, _ = intrinsic.dcf_value_path(1000.0, 0.25, 0.01, 0.07, -0.06, -0.01)
+    assert never < 0
+
+
+def test_solve_increasing_round_trips_and_respects_bounds():
+    assert math.isclose(intrinsic.solve_increasing(lambda x: 3 * x, 0.9), 0.3, abs_tol=1e-9)
+    assert intrinsic.solve_increasing(lambda x: 3 * x, 100.0) is None
+
+
+def _dcf_holding(margin: float = 0.10) -> intrinsic.Valuation:
+    v = intrinsic.Valuation(symbol="TEST", currency="USD", price=50.0, price_date="2026-01-01")
+    v.model, v.discount_rate = "dcf", 0.10
+    v.inputs = {"owner_cf_margin": margin, "revenue": 1000.0, "shares": 10.0}
+    return v
+
+
+def test_value_under_matches_the_formula_and_needs_a_growth_rate():
+    v = _dcf_holding()
+    expected, _ = intrinsic.dcf_value_path(1000.0, 0.20, cfg.TERMINAL_GROWTH["USD"], 0.10,
+                                           0.10, 0.10)
+    assert math.isclose(intrinsic.value_under(v, growth=0.20), expected / 10.0)
+    assert intrinsic.value_under(v) is None
+
+
+def test_thesis_is_empty_unless_entered():
+    v = _dcf_holding()
+    saved = dict(cfg.THESIS)
+    try:
+        cfg.THESIS.clear()
+        assert intrinsic.thesis_value(v) == (None, {})
+        cfg.THESIS["TEST"] = {"growth": 0.20, "margin": 0.15}
+        value, thesis = intrinsic.thesis_value(v)
+        assert thesis == {"growth": 0.20, "margin": 0.15}
+        assert value > intrinsic.value_under(v, growth=0.20)   # margin rises
+    finally:
+        cfg.THESIS.clear()
+        cfg.THESIS.update(saved)
+
+
+def test_ladder_breakeven_is_where_price_equals_value():
+    v = _dcf_holding()
+    row = intrinsic.belief_ladder(v)[0]
+    assert math.isclose(intrinsic.value_under(v, growth=row["breakeven"]), v.price, rel_tol=1e-6)
+    # Ratios fall as assumed growth rises.
+    ratios = [x for x in row["ratios"] if x is not None]
+    assert ratios == sorted(ratios, reverse=True)
+
+
+def test_ladder_gives_no_ratio_for_a_margin_that_stays_negative():
+    row = intrinsic.belief_ladder(_dcf_holding(margin=-0.05))[0]
+    assert all(x is None for x in row["ratios"]) and row["breakeven"] is None
+
+
 if __name__ == "__main__":
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_")]
     for name, fn in tests:

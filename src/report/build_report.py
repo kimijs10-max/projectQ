@@ -330,6 +330,56 @@ def section_stress(conn: sqlite3.Connection) -> tuple[str, dict]:
     return body, facts
 
 
+def _belief_tables(valuations) -> str:
+    """Price / value across a grid of growth (or ROE) assumptions, and any entered thesis."""
+    blocks = []
+    for unit, heading in (("growth", "starting growth of"), ("ROE", "starting ROE of")):
+        rows, grid = [], None
+        for v in valuations:
+            for row in intrinsic.belief_ladder(v):
+                if row["unit"] != unit:
+                    continue
+                grid = row["grid"]
+                fair = "n/a" if row["breakeven"] is None else pct(row["breakeven"], 0, signed=False)
+                rows.append([esc(v.symbol), esc(row["label"]),
+                             pct(v.delivered, 0, signed=False)]
+                            + ["n/a" if x is None else f"{x:.2f}x" for x in row["ratios"]]
+                            + [fair])
+        if rows:
+            blocks.append(table(
+                ["Holding", "Case", "Delivered"]
+                + [f"{g * 100:.0f}%" for g in grid] + ["Fair at"], rows, numeric_from=2))
+            blocks.append(f'<p class="note">Price / value at a {heading} each column; below '
+                          f"1.00x the price is under the value that assumption gives. "
+                          f'"Fair at" is the assumption at which price equals value.</p>')
+    if not blocks:
+        return ""
+
+    thesis_rows = []
+    for v in valuations:
+        value, thesis = intrinsic.thesis_value(v)
+        if not thesis:
+            continue
+        stated = ", ".join(f"{k} {x * 100:.0f}%" if k != "fade_years" else f"fade {x} yrs"
+                           for k, x in thesis.items()
+                           if k in ("growth", "margin", "roe", "fade_years"))
+        if value is None or value <= 0:
+            thesis_rows.append([esc(v.symbol), esc(stated), "n/a", "n/a", "n/a"])
+            continue
+        mos = 1 - v.price / value
+        thesis_rows.append([esc(v.symbol), esc(stated), f"{v.price / value:.2f}x", pct(mos, 0),
+                            pct(intrinsic.target_weight(mos), 1, signed=False)])
+    if thesis_rows:
+        thesis_html = table(["Holding", "Your forecast", "Price / value", "Margin of safety",
+                             "Rule weight"], thesis_rows, numeric_from=2)
+    else:
+        thesis_html = ('<p class="note">No forecast entered. Add your own per holding under '
+                       "THESIS in config/valuation.py to see value and margin of safety on "
+                       "your view; nothing is assumed on your behalf.</p>")
+    return ("<h3>What would you have to believe?</h3>" + "".join(blocks)
+            + "<h3>Your thesis</h3>" + thesis_html)
+
+
 def section_book(conn: sqlite3.Connection) -> str:
     """What is held, what it is worth, and what the factor regressions say."""
     valuations = intrinsic.value_holdings(conn)
@@ -377,9 +427,11 @@ def section_book(conn: sqlite3.Connection) -> str:
                        + '<p class="note">Each sleeve regressed in its own currency on its own '
                          "region's Fama-French factors; Newey-West t-statistics.</p>")
     note = ('<p class="note">Price / value is against the base-case intrinsic value; below 1.00x '
-            "is a discount. A withheld value means the method does not apply, not that the "
-            "value is zero. Assumptions are in config/valuation.py.</p>")
-    return value_table + note + factor_html
+            "is a discount. The base case assumes growth slows sharply, so a high multiple "
+            "here is a statement about that caution; the ladder below is the fairer read for "
+            "a growth holding. A withheld value means the method does not apply on today's "
+            "cash flow, not that the value is zero.</p>")
+    return value_table + note + _belief_tables(valuations) + factor_html
 
 
 def section_screen(conn: sqlite3.Connection) -> str:

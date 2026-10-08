@@ -109,6 +109,54 @@ def dcf_value(
     return value, (terminal / value if value else float("nan"))
 
 
+def dcf_value_path(
+    revenue: float,
+    g_start: float,
+    g_terminal: float,
+    r: float,
+    margin_start: float,
+    margin_end: float,
+    years: int = cfg.HORIZON_YEARS,
+) -> tuple[float, float]:
+    """
+    dcf_value() with the margin allowed to move: revenue grows at a rate
+    fading from `g_start` to `g_terminal`, and the owner-cash-flow margin
+    moves linearly from `margin_start` today to `margin_end` in the final
+    year, where it stays.
+
+    With margin_start == margin_end this is exactly dcf_value() on
+    margin * revenue. It exists for the two cases a constant margin
+    cannot express: a business whose margin is expected to rise, and one
+    that is investing more than it earns today -- early cash flows may be
+    negative, and are discounted as such.
+    """
+    if r <= g_terminal:
+        raise ValueError("discount rate must exceed terminal growth")
+    growth = np.linspace(g_start, g_terminal, years)
+    revenues = revenue * np.cumprod(1 + growth)
+    steps = np.arange(1, years + 1) / years
+    margins = margin_start + (margin_end - margin_start) * steps
+    flows = revenues * margins
+    discount = (1 + r) ** np.arange(1, years + 1)
+    explicit = float((flows / discount).sum())
+    terminal = float(flows[-1] * (1 + g_terminal) / (r - g_terminal) / discount[-1])
+    value = explicit + terminal
+    return value, (terminal / value if value else float("nan"))
+
+
+def solve_increasing(fn, target: float, lo: float = -0.50, hi: float = 3.00) -> float | None:
+    """The x in [lo, hi] at which an increasing fn(x) equals `target`, by bisection."""
+    if fn(lo) > target or fn(hi) < target:
+        return None
+    for _ in range(80):
+        mid = (lo + hi) / 2
+        if fn(mid) > target:
+            hi = mid
+        else:
+            lo = mid
+    return (lo + hi) / 2
+
+
 def implied_growth(
     target_value: float,
     cash_flow: float,
@@ -353,6 +401,10 @@ def _value_dcf(v: Valuation, group: pd.DataFrame, shares: float) -> None:
         "revenue_cagr": revenue_cagr,
         "cagr_years": span,
         "sbc_share_of_ocf": sbc_share,
+        # Kept so a forecast can be valued later without re-reading the
+        # statements; never printed.
+        "revenue": revenue,
+        "shares": shares,
     }
 
     if margin <= 0:
@@ -421,6 +473,8 @@ def _value_residual_income(v: Valuation, group: pd.DataFrame, shares: float) -> 
         "price_to_book": v.price * shares / book,
         "roe": roe,
         "payout": payout,
+        "book": book,
+        "shares": shares,
     }
     for name in SCENARIOS:
         value = residual_income_value(book, roe, r, payout, cfg.RI_FADE_YEARS[name])
@@ -501,6 +555,92 @@ def value_symbols(
         else:
             _value_dcf(v, group, shares)
     return out
+
+
+def value_under(v: Valuation, growth: float | None = None, margin: float | None = None,
+                roe: float | None = None, fade_years: int | None = None) -> float | None:
+    """
+    Per-share value of `v` under stated assumptions instead of the
+    scenarios: a starting growth rate and (optionally) a margin to move
+    to for a DCF name, a starting ROE and fade for a bank. None when the
+    name lacks the inputs or the assumption its model needs.
+
+    Works for a name whose base valuation was withheld for negative cash
+    flow, provided a positive margin is supplied -- that is the case it
+    is for.
+    """
+    i, r = v.inputs, v.discount_rate
+    if r is None or not i.get("shares"):
+        return None
+    if v.model == "dcf":
+        if growth is None:
+            return None
+        start = i["owner_cf_margin"]
+        end = start if margin is None else margin
+        value, _ = dcf_value_path(i["revenue"], growth, cfg.TERMINAL_GROWTH[v.currency], r,
+                                  start, end)
+        return value / i["shares"]
+    if v.model == "residual income":
+        value = residual_income_value(
+            i["book"], i["roe"] if roe is None else roe, r, i["payout"],
+            cfg.RI_FADE_YEARS["base"] if fade_years is None else fade_years)
+        return value / i["shares"]
+    return None
+
+
+def thesis_value(v: Valuation) -> tuple[float | None, dict]:
+    """Per-share value under the owner's forecast in cfg.THESIS, and that forecast."""
+    thesis = cfg.THESIS.get(v.symbol)
+    if not thesis:
+        return None, {}
+    value = value_under(v, growth=thesis.get("growth"), margin=thesis.get("margin"),
+                        roe=thesis.get("roe"), fade_years=thesis.get("fade_years"))
+    return value, thesis
+
+
+def belief_ladder(v: Valuation) -> list[dict]:
+    """
+    Price / value across a grid of assumptions: what would have to be
+    believed for the price to be fair.
+
+    One row per margin case for a DCF name (today's margin, then any in
+    cfg.MARGIN_LADDER), one row per fade length for a bank. Each row carries the ratios
+    along the grid and `breakeven`, the assumption at which price equals
+    value. A ratio is None where the value is not positive.
+    """
+    def ratio(value: float | None) -> float | None:
+        return None if value is None or value <= 0 else v.price / value
+
+    rows: list[dict] = []
+    if v.model == "dcf" and v.inputs.get("shares") and v.discount_rate is not None:
+        current = v.inputs["owner_cf_margin"]
+        cases = [(f"margin stays {current * 100:.0f}%", None)]
+        cases += [(f"margin reaches {m * 100:.0f}%", m) for m in cfg.MARGIN_LADDER.get(v.symbol, ())]
+        for label, margin in cases:
+            end = current if margin is None else margin
+            if end <= 0:
+                # A margin that never turns positive has no value at any
+                # growth rate; faster growth only makes it more negative.
+                rows.append({"label": label, "grid": cfg.GROWTH_LADDER,
+                             "ratios": [None] * len(cfg.GROWTH_LADDER), "breakeven": None,
+                             "unit": "growth"})
+                continue
+            rows.append({
+                "label": label, "grid": cfg.GROWTH_LADDER, "unit": "growth",
+                "ratios": [ratio(value_under(v, growth=g, margin=margin))
+                           for g in cfg.GROWTH_LADDER],
+                "breakeven": solve_increasing(
+                    lambda g, m=margin: value_under(v, growth=g, margin=m), v.price),
+            })
+    elif v.model == "residual income" and v.inputs.get("shares"):
+        for fade in cfg.FADE_LADDER:
+            rows.append({
+                "label": f"fades over {fade} years", "grid": cfg.ROE_LADDER, "unit": "ROE",
+                "ratios": [ratio(value_under(v, roe=x, fade_years=fade)) for x in cfg.ROE_LADDER],
+                "breakeven": solve_increasing(
+                    lambda x, f=fade: value_under(v, roe=x, fade_years=f), v.price, 0.0, 1.0),
+            })
+    return rows
 
 
 def current_weights(conn: sqlite3.Connection) -> dict[str, float]:
@@ -610,8 +750,60 @@ def main() -> None:
                 print(f"  {v.symbol}: {v.withheld}")
 
         print("\n" + "-" * 78)
+        print("WHAT YOU WOULD HAVE TO BELIEVE -- price / value across a grid of assumptions")
+        print("-" * 78)
+        print("  Below 1.00x the price is under the value that assumption gives. The grid is")
+        print("  not a forecast; find the column you actually believe.\n")
+        for v in results:
+            ladder = belief_ladder(v)
+            if not ladder:
+                continue
+            unit = ladder[0]["unit"]
+            head = "starting growth" if unit == "growth" else "starting ROE"
+            print(f"  {v.symbol}  ({head}; delivered "
+                  f"{_pct(v.delivered).strip()})")
+            print(f"  {'':<24}" + "".join(f"{g * 100:>7.0f}%" for g in ladder[0]["grid"])
+                  + f"{'fair at':>10}")
+            for row in ladder:
+                cells = "".join("     n/a" if x is None else f"{x:>7.2f}x" for x in row["ratios"])
+                fair = "--" if row["breakeven"] is None else f"{row['breakeven'] * 100:.0f}%"
+                print(f"  {row['label']:<24}{cells}{fair:>10}")
+            print()
+        print("  'fair at' is the assumption at which price equals value. Margin rows move the")
+        print("  owner-cash-flow margin linearly to that level over the horizon.")
+
+        print("\n" + "-" * 78)
+        print("YOUR THESIS -- value under your own forecast (config/valuation.py, THESIS)")
+        print("-" * 78)
+        entered = False
+        for v in results:
+            value, thesis = thesis_value(v)
+            if not thesis:
+                continue
+            entered = True
+            stated = ", ".join(
+                f"{k} {x * 100:.0f}%" if k != "fade_years" else f"fade {x} yrs"
+                for k, x in thesis.items() if k in ("growth", "margin", "roe", "fade_years"))
+            if value is None or value <= 0:
+                print(f"  {v.symbol}: {stated} -> no positive value under this forecast "
+                      f"(a {v.model or 'valuation'} needs "
+                      f"{'growth and a positive margin' if v.model == 'dcf' else 'an ROE'})")
+                continue
+            mos = 1 - v.price / value
+            print(f"  {v.symbol}: {stated} -> value {_money(value).strip()} against price "
+                  f"{_money(v.price).strip()}: {v.price / value:.2f}x, margin of safety "
+                  f"{_pct(mos, signed=True).strip()}, rule weight "
+                  f"{_pct(target_weight(mos)).strip()}")
+        missing = [v.symbol for v in results if v.symbol not in cfg.THESIS]
+        if not entered:
+            print("  None entered. The forecasts are yours to make; nothing is assumed for you.")
+        if missing:
+            print(f"  No forecast for: {', '.join(missing)}.")
+
+        print("\n" + "-" * 78)
         print("SIZING: weight held against weight the discount would justify")
         print("-" * 78)
+        print("  (on the cautious base case, not on your thesis)")
         print(f"  rule: {cfg.SIZING_FRACTION:.2f} x margin of safety, nothing below "
               f"{cfg.MIN_MARGIN_OF_SAFETY * 100:.0f}%, capped at "
               f"{cfg.MAX_WEIGHT * 100:.0f}%\n")

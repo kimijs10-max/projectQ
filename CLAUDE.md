@@ -9,8 +9,13 @@ Every day it answers four questions:
 4. How well did I trade? (execution vs. arrival price / VWAP)
 
 I invest using **firm-foundation theory** (intrinsic value from future cash flows; buy below it).
-Phase 4 tests and strengthens that philosophy with quant factors (value, quality, momentum)
-and margin-of-safety position sizing.
+Growth is part of that value, not its opposite: the book is growth-oriented, and that is
+consistent with the philosophy. Do not read a missing "value factor" tilt (HML, low P/B) as a
+contradiction of it — that mistake was made across phases 4a–4d and corrected on 2026-10-07
+(see NOTES.md). The test of the philosophy is whether each price is below the value its
+expected growth supports.
+Phase 4 examines the book with quant factors (value, quality, momentum) and adds
+margin-of-safety position sizing.
 
 Purpose beyond the tool itself: a portfolio project for Markets / S&T and IB 
 interviews (summer 2027). Clean code, a clear README, and honest methodology matter.
@@ -192,9 +197,9 @@ Phases 0–6 done; Phase 7 done except the LinkedIn write-up.
   profitability was negatively correlated with within-sector
   outperformance both years. Value was the only signal to hold a
   non-negligible sign across both; momentum flipped.
-  This cuts against the book: phases 4a–4c all found it is *not*
-  value-tilted, and 4d finds value is the one signal with consistency
-  behind it. Caveats in NOTES.md are substantial — crude quality proxies,
+  Phases 4a–4c all found the book is *not* tilted to cheapness on book or
+  earnings, and 4d finds that is the one signal with consistency behind
+  it. A statement about factor exposure, not a verdict on the strategy. Caveats in NOTES.md are substantial — crude quality proxies,
   two draws from one regime, survivors only, optimistic p-values.
 - `config/valuation.py` + `src/sizing/intrinsic.py` +
   `tests/test_intrinsic.py`: Phase 4 sizing. DCF on owner cash flow
@@ -206,10 +211,18 @@ Phases 0–6 done; Phase 7 done except the LinkedIn write-up.
   5105.T at 0.63x (37% margin of safety, holds in the bear case and up to
   an ~11% cost of equity). 8306.T 1.69x, NVDA 3.00x, SHOP 11.74x; 4180.T
   withheld (owner cash flow negative in 4 of 4 years). The rule would
-  hold 82% cash. Fifth method, same answer as 4a–4d. The reverse DCF is
-  the more honest read: NVDA's price needs about half its delivered
-  growth, SHOP's needs three times it. See NOTES.md for limitations
-  (hand-typed rates, constant margins).
+  hold 82% cash. That is the *cautious base case*, which caps starting
+  growth at 20%; it is not a fifth vote alongside the factor results.
+  The fairer read for a growth book is the belief ladder
+  (`belief_ladder()`, price ÷ value across starting growth rates) and the
+  owner's own forecast per holding (`THESIS` in config/valuation.py,
+  empty by default — never fill it in for the user). `dcf_value_path()`
+  lets the margin move, so SHOP's margin case and 4180.T's negative
+  cash flow can be valued. Fair at: NVDA 53% starting growth (delivered
+  100%); SHOP 92%, or 65% if margin reaches 25% (delivered 27%); 4180.T
+  25% if margin reaches 10% (delivered 31%); 8306.T 15% ROE fading over
+  40 years (delivered 11%). See NOTES.md for limitations (hand-typed
+  rates).
 - `config/scenarios.py` + `src/analytics/stress.py` +
   `tests/test_stress.py`: Phase 5. Historical replay of today's weights
   (stocks and cash by currency) through an episode window, reporting the

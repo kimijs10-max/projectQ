@@ -149,18 +149,20 @@ because daily residuals are serially correlated — the same property that
 showed up diagnosing the reconciliation residual — so OLS t-statistics
 would be overstated here.
 
-**The result contradicts the stated strategy, which is the interesting
-part.** An intrinsic-value approach predicts a positive HML loading.
-Neither sleeve has one: USD −0.41 (t = −1.8), JPY −0.07 (t = −0.2).
+**Neither sleeve has a positive value loading**: USD −0.41 (t = −1.8),
+JPY −0.07 (t = −0.2).
 
-The careful reading is narrower than "the value thesis failed". HML is
-constructed on book-to-market, whereas firm-foundation investing values
-discounted future cash flows — different constructs, and a DCF-based
-investor can rationally hold a high book-multiple name if future cash
-flows justify the price. The defensible claim is that **the strategy as
-implemented is not academic-HML value**. Phase 4b–d builds explicit
-value and quality metrics, which will let that be settled properly
-rather than argued.
+That is a fact about the book, and it is not a contradiction of the
+strategy. HML is built on book-to-market: it measures whether stocks are
+cheap against what they own today. Firm-foundation investing values
+discounted *future* cash flows, and for a growing company most of those
+are in the future, so growth is part of intrinsic value rather than its
+opposite. An investor working from future cash flows can rationally hold a
+high-multiple name, and will then load negatively on HML. The accurate
+statement is that **this is a growth-oriented book, not an academic-HML
+value one** — and that the test of the strategy is therefore a different
+one: whether each price is below the value its expected growth supports.
+That is taken up under "What is each holding worth?" below.
 
 Two further readings. The USD sleeve carries market beta 1.53 with
 R² 0.59, so a large part of it is simply leveraged market exposure; the
@@ -482,20 +484,23 @@ What it supports is narrower and still worth saying: in this universe over
 these two years, quality as measured here detracted from value rather than
 adding to it, and value was the only signal that held its direction.
 
-That lands awkwardly against the portfolio, which is the point. Three
-methods already concluded the book is not value-tilted. The validation
-then finds value is the one signal in this data with any consistency
-behind it. **So the strategy as implemented underweights the only factor
-this data supports** — a conclusion kept because it is not flattering.
+Set beside the portfolio, that is worth stating plainly. Three methods
+found the book is not tilted to cheapness on book or earnings, and the
+validation finds cheapness is the one signal in this data with any
+consistency behind it. **The book does not carry the one factor this data
+supports.** That is a statement about factor exposure, not a verdict on
+the strategy: a book built on expected growth is not trying to own that
+factor, and stands or falls on whether the growth it pays for arrives.
 
 ---
 
 ## What is each holding worth?
 
-Everything above measures the book against factor definitions of value.
-The last step uses the philosophy's own yardstick: estimate what each
-holding is worth from the cash it returns to owners, and compare that with
-the price.
+Everything above measures the book against factor definitions of value —
+cheapness on today's book and earnings. Firm-foundation value is something
+else: the present value of the cash a company will produce, growth
+included. This step uses that yardstick: estimate what each holding is
+worth from the cash it returns to owners, and compare that with the price.
 
 Two models, because one does not fit a bank. Non-financials get a
 discounted cash flow on *owner cash flow* — operating cash flow less capex
@@ -536,6 +541,37 @@ only come from margin expansion the model does not allow for.
 owner cash flow is negative in every year available, and a company
 investing more than it generates cannot be valued from current cash flow.
 It gets no target in either direction.
+
+### What would you have to believe?
+
+The base case is cautious by construction, and for a growth holding its
+multiple mostly restates that caution. The more useful output is a ladder:
+price ÷ value across a range of starting growth rates, so the question
+becomes which column the owner actually believes.
+
+| | Delivered | 20% | 30% | 40% | 50% | Fair at |
+|---|---|---|---|---|---|---|
+| NVDA, margin stays 41% | 100% | 3.15x | 2.19x | 1.54x | 1.09x | 53% |
+| SHOP, margin stays 10% | 27% | 10.11x | 7.08x | 5.02x | 3.59x | 92% |
+| SHOP, margin reaches 25% | 27% | 4.96x | 3.40x | 2.37x | 1.67x | 65% |
+| 4180.T, margin reaches 10% | 31% | 1.26x | 0.82x | 0.55x | 0.37x | 25% |
+| 5105.T, margin stays 9% | 6% | 0.32x | 0.22x | 0.15x | 0.11x | −7% |
+
+Prices as of 2026-10-07. Read across a row until the multiple drops below 1.00x: that is the
+starting growth the price requires, fading to a terminal rate over ten
+years. NVDA is fair at about half the growth it has delivered. SHOP needs
+more than twice its delivered growth even if its cash-flow margin rises
+two and a half times. 4180.T, which the constant-margin model could not
+value at all, is fair at growth below what it has delivered provided its
+margin turns to 10%. For the bank the equivalent ladder is in return on
+equity: fair at a 15% starting ROE fading over forty years, against 11%
+delivered.
+
+The margin rows exist because holding today's margin constant prices one
+kind of company harshly and cannot value another. They are a grid, not a
+forecast. The forecast belongs to the owner: `config/valuation.py` has a
+`THESIS` entry per holding, and the engine values each stock under it.
+None is filled in by default.
 
 Assumptions — risk-free rates, equity risk premium, terminal growth, the
 scenario definitions and the sizing rule — are stated in
